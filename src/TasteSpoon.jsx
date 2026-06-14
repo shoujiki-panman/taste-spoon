@@ -183,16 +183,16 @@ function verdictTier(score) {
 
 // 今日の気分／期待のチップ（任意・複数可）
 const INTENTS = [
-  { id: "kotteri", label: "こってり食べたい" },
-  { id: "sappari", label: "さっぱりがいい" },
+  { id: "bitterLove", label: "苦い・深煎り好き" },
+  { id: "bitterHate", label: "苦い・深煎り苦手" },
   { id: "adventure", label: "冒険したい" },
   { id: "safe", label: "無難にいきたい" },
   { id: "noFail", label: "失敗したくない" },
 ];
 // 同時に成立しないチップ（選ぶと相手を外す）
 const INTENT_CONFLICTS = {
-  kotteri: ["sappari"],
-  sappari: ["kotteri"],
+  bitterLove: ["bitterHate"],
+  bitterHate: ["bitterLove"],
   adventure: ["safe", "noFail"],
   safe: ["adventure"],
   noFail: ["adventure"],
@@ -203,13 +203,14 @@ const INTENT_CONFLICTS = {
 function intentAdjustedMatch(baseMatch, taste, intents) {
   if (!intents || intents.size === 0) return baseMatch;
   const pickyDev = (taste?.picky ?? 2.5) - 2.5; // + = 人を選ぶ
-  const creamyDev = (taste?.creamy ?? 2.5) - 2.5; // + = こってり
+  // 苦味・ロースト(深煎り)の合成。+ = 苦い/深煎りが強い店
+  const bitterDev = (((taste?.bitter ?? 2.5) + (taste?.roast ?? 2.5)) / 2) - 2.5;
   let delta = 0;
   if (intents.has("adventure")) delta += 4 * pickyDev;
   if (intents.has("safe")) delta -= 4 * Math.max(0, pickyDev);
   if (intents.has("noFail")) delta -= 5 * Math.max(0, pickyDev);
-  if (intents.has("kotteri")) delta += 3 * creamyDev;
-  if (intents.has("sappari")) delta -= 3 * creamyDev;
+  if (intents.has("bitterLove")) delta += 4 * bitterDev; // 苦い店ほど加点
+  if (intents.has("bitterHate")) delta -= 4 * Math.max(0, bitterDev); // 苦い店だけ減点
   return Math.max(0, Math.min(100, Math.round(baseMatch + delta)));
 }
 
@@ -217,18 +218,19 @@ function intentAdjustedMatch(baseMatch, taste, intents) {
 function intentRemark(taste, intents) {
   if (!intents || intents.size === 0) return null;
   const picky = (taste?.picky ?? 2.5) >= 3.5;
-  const creamy = (taste?.creamy ?? 2.5) >= 3.5;
-  const light = (taste?.creamy ?? 2.5) <= 1.5;
+  const bitterAvg = ((taste?.bitter ?? 2.5) + (taste?.roast ?? 2.5)) / 2;
+  const bitter = bitterAvg >= 3.5;
+  const mild = bitterAvg <= 1.5;
   if (intents.has("adventure") && picky)
     return "冒険したい今日なら、この尖り具合はむしろ楽しめるはず。";
   if ((intents.has("noFail") || intents.has("safe")) && picky)
     return "“失敗したくない”なら、ここは少し攻めすぎかも。覚悟がある日に取っておこう。";
-  if (intents.has("kotteri") && creamy)
-    return "こってり気分にはこのコク、ちゃんと応えてくれる。";
-  if (intents.has("kotteri") && light)
-    return "こってり狙いだと、ここはちょっと物足りないかも。";
-  if (intents.has("sappari") && creamy)
-    return "さっぱりいきたい日には、これは少し重く感じるかもね。";
+  if (intents.has("bitterLove") && bitter)
+    return "深煎り・苦め好きなら、この焦がし感はど真ん中のはず。";
+  if (intents.has("bitterHate") && bitter)
+    return "苦いのが苦手なら、この深煎りはちょっとキツいかも。正直、別の日がいい。";
+  if (intents.has("bitterHate") && mild)
+    return "苦いの苦手でも、ここは穏やかめ。安心して大丈夫。";
   return null;
 }
 
