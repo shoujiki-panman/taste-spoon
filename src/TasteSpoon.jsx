@@ -54,14 +54,42 @@ const SAMPLE_TASTE = {
   comment: "深煎りを突き詰めた焦がし感が主役。刺さる人にはとことん刺さる、人を選ぶ一杯。",
 };
 
-const DEFAULT_PROFILE = {
-  bitter: 2,
-  sour: 4,
-  roast: 2,
-  creamy: 4,
-  firstTime: 4,
-  picky: 2,
-};
+// 初回・未学習はニュートラル(中間値)。診断もスライダーも無しで即判定できる。
+const NEUTRAL_PROFILE = Object.fromEntries(AXES.map((a) => [a.key, 2.5]));
+
+const STORE_KEY = "tasteSpoon.profile.v1";
+const LEARN_RATE = 0.2; // 1回の学習で taste へ寄せる割合
+const LEARN_THRESHOLD = 3; // この回数まで「学習中」表示
+
+const clamp5 = (n) => Math.max(0, Math.min(5, n));
+
+// localStorage から { profile, learnCount } を復元（壊れていればニュートラル）
+function loadStore() {
+  const fallback = { profile: { ...NEUTRAL_PROFILE }, learnCount: 0 };
+  try {
+    const raw = localStorage.getItem(STORE_KEY);
+    if (!raw) return fallback;
+    const p = JSON.parse(raw);
+    const profile = {};
+    for (const a of AXES) {
+      const v = p?.profile?.[a.key];
+      profile[a.key] = typeof v === "number" ? clamp5(v) : 2.5;
+    }
+    return { profile, learnCount: Number(p?.learnCount) || 0 };
+  } catch {
+    return fallback;
+  }
+}
+
+// 各軸を taste へ近づける(dir=+1)／遠ざける(dir=-1)。0〜5 にクランプ。
+function learnedProfile(profile, taste, dir) {
+  const next = {};
+  for (const a of AXES) {
+    const t = typeof taste?.[a.key] === "number" ? taste[a.key] : 2.5;
+    next[a.key] = clamp5(profile[a.key] + dir * LEARN_RATE * (t - profile[a.key]));
+  }
+  return next;
+}
 
 const PROFILE_AXES = [
   { key: "bitter", label: "苦味の強さ" },
@@ -155,17 +183,48 @@ function verdictTier(score) {
 
 export default function TasteSpoon() {
   const [text, setText] = useState(SAMPLE);
-  const [profile, setProfile] = useState(DEFAULT_PROFILE);
-  const [result, setResult] = useState({ taste: SAMPLE_TASTE, match: calcMatch(SAMPLE_TASTE, DEFAULT_PROFILE) });
+  const [store, setStore] = useState(loadStore);
+  const { profile, learnCount } = store;
+  const setProfile = (next) =>
+    setStore((s) => ({ ...s, profile: typeof next === "function" ? next(s.profile) : next }));
+  const [result, setResult] = useState(() => ({
+    taste: SAMPLE_TASTE,
+    match: calcMatch(SAMPLE_TASTE, store.profile),
+  }));
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState("");
   const [runSeq, setRunSeq] = useState(0);
+  const [feedback, setFeedback] = useState(null); // null | 'fit' | 'meh' | 'no'
   const resultRef = useRef(null);
+
+  // profile / 学習回数を localStorage に永続化
+  useEffect(() => {
+    try {
+      localStorage.setItem(STORE_KEY, JSON.stringify(store));
+    } catch {
+      /* ストレージ不可でも判定は続行 */
+    }
+  }, [store]);
+
+  // 判定後の1タップ学習（合った→寄せる / 合わなかった→遠ざける / 微妙→据置）
+  const giveFeedback = (kind) => {
+    setFeedback(kind);
+    if (kind === "meh") {
+      setStore((s) => ({ ...s, learnCount: s.learnCount + 1 }));
+      return;
+    }
+    const dir = kind === "fit" ? 1 : -1;
+    setStore((s) => ({
+      profile: learnedProfile(s.profile, result.taste, dir),
+      learnCount: s.learnCount + 1,
+    }));
+  };
 
   const run = async () => {
     if (!text.trim() || loading) return;
     setLoading(true);
     setErr("");
+    setFeedback(null);
     try {
       const taste = await analyzeTaste(text.trim());
       const match = calcMatch(taste, profile);
@@ -230,22 +289,24 @@ export default function TasteSpoon() {
         {err && <p style={S.err}>{err}</p>}
       </section>
 
-      <section style={S.card}>
-        <label style={S.label}>あなたの味覚プロフィール</label>
-        <p style={S.hint}>普段の好みでスライダーを動かしてください(相性判定に使います)</p>
-        {PROFILE_AXES.map((a) => (
-          <div key={a.key} style={S.sliderRow}>
-            <span style={S.sliderLabel}>{a.label}</span>
-            <input
-              type="range" min={0} max={5} step={1}
-              value={profile[a.key]}
-              onChange={(e) => setProfile({ ...profile, [a.key]: Number(e.target.value) })}
-              style={S.slider}
-            />
-            <span style={S.sliderVal}>{profile[a.key]}</span>
-          </div>
-        ))}
-      </section>
+      <details className="tune" style={S.tuneDetails}>
+        <summary style={S.tuneSummary}>⚙️ もっと精度を上げる・詳しく調整（任意）</summary>
+        <div style={S.tuneBody}>
+          <p style={S.hint}>普段の好みに合わせてスライダーを動かすと、相性がより正確になります（触らなくてもOK）。</p>
+          {PROFILE_AXES.map((a) => (
+            <div key={a.key} style={S.sliderRow}>
+              <span style={S.sliderLabel}>{a.label}</span>
+              <input
+                type="range" min={0} max={5} step={1}
+                value={Math.round(profile[a.key])}
+                onChange={(e) => setProfile({ ...profile, [a.key]: Number(e.target.value) })}
+                style={S.slider}
+              />
+              <span style={S.sliderVal}>{profile[a.key].toFixed(1)}</span>
+            </div>
+          ))}
+        </div>
+      </details>
 
       {result && (
         <section style={S.resultCard} ref={resultRef}>
@@ -299,7 +360,29 @@ export default function TasteSpoon() {
                 <span style={{ ...S.scoreAuxNum, color: tier.tone }}>{result.match}%</span>
               </div>
             </div>
+
+            {learnCount < LEARN_THRESHOLD && (
+              <p style={S.learnNote}>※まだ学習中。一般的な“人を選ぶ度”ベースの見立てです。</p>
+            )}
           </div>
+
+          {/* 判定後の1タップ学習（任意・押さなくてOK）*/}
+          {!loading && (
+            <div style={S.feedbackBox}>
+              {feedback ? (
+                <p style={S.feedbackThanks}>🍞 正直パンマンが覚えたよ。次の見立てに反映するね。</p>
+              ) : (
+                <>
+                  <p style={S.feedbackQ}>実はどうだった？</p>
+                  <div style={S.feedbackRow}>
+                    <button style={{ ...S.fbBtn, ...S.fbFit }} onClick={() => giveFeedback("fit")}>合った</button>
+                    <button style={{ ...S.fbBtn, ...S.fbMeh }} onClick={() => giveFeedback("meh")}>微妙</button>
+                    <button style={{ ...S.fbBtn, ...S.fbNo }} onClick={() => giveFeedback("no")}>合わなかった</button>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
 
           {/* レーダー（Step 4 で詳細トグルへ降格予定。今は下にそのまま表示）*/}
           <div style={S.chartWrap}>
@@ -340,7 +423,19 @@ const S = {
   sliderRow: { display: "flex", alignItems: "center", gap: 10, marginBottom: 10 },
   sliderLabel: { width: 110, fontSize: 13, fontWeight: 600, color: "#6a5236" },
   slider: { flex: 1, accentColor: "#c0392b" },
-  sliderVal: { width: 18, textAlign: "right", fontWeight: 700, color: "#c0392b" },
+  sliderVal: { width: 30, textAlign: "right", fontWeight: 700, color: "#c0392b" },
+  tuneDetails: { background: "#fffdf7", border: "2px solid #ecdcc0", borderRadius: 18, marginBottom: 16, boxShadow: "0 4px 16px rgba(160,120,60,.08)", overflow: "hidden" },
+  tuneSummary: { listStyle: "none", cursor: "pointer", padding: "14px 18px", fontWeight: 700, fontSize: 14, color: "#7a5c34", userSelect: "none" },
+  tuneBody: { padding: "0 18px 18px" },
+  learnNote: { margin: "10px 0 0", fontSize: 12, color: "#a08a6a", textAlign: "center" },
+  feedbackBox: { margin: "0 0 14px", textAlign: "center" },
+  feedbackQ: { margin: "0 0 8px", fontSize: 13.5, fontWeight: 700, color: "#7a5c34" },
+  feedbackThanks: { margin: "4px 0 0", fontSize: 14, fontWeight: 700, color: "#2f9e44" },
+  feedbackRow: { display: "flex", gap: 8 },
+  fbBtn: { flex: 1, minHeight: 48, border: "2px solid", borderRadius: 12, background: "#fffefb", fontFamily: "inherit", fontSize: 14, fontWeight: 700, cursor: "pointer" },
+  fbFit: { borderColor: "#2f9e44", color: "#2f9e44" },
+  fbMeh: { borderColor: "#f08c00", color: "#d97a00" },
+  fbNo: { borderColor: "#e8590c", color: "#e8590c" },
   verdictCard: { border: "3px solid", borderRadius: 18, padding: "20px 18px 18px", background: "#fffefb", marginBottom: 14 },
   tierRow: { display: "flex", alignItems: "center", justifyContent: "center", gap: 12, margin: "2px 0 10px" },
   tierImgWrap: { display: "inline-flex", lineHeight: 0 },
@@ -386,6 +481,10 @@ const CSS = `
 * { -webkit-tap-highlight-color: transparent; }
 body { margin: 0; background: #fdf6e7; }
 input[type=range] { height: 22px; }
+.tune > summary::-webkit-details-marker { display: none; }
+.tune > summary::after { content: "▾"; float: right; color: #bfa178; transition: transform .2s; }
+.tune[open] > summary::after { transform: rotate(180deg); }
+.tune > summary:hover { background: #fbf3df; }
 @keyframes panPop {
   0%   { opacity: 0; transform: translateY(18px) scale(.55); }
   55%  { opacity: 1; transform: translateY(-7px) scale(1.10); }
