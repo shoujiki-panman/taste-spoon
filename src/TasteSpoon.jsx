@@ -1,4 +1,4 @@
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import {
   RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar,
   ResponsiveContainer,
@@ -9,6 +9,31 @@ import PanmanAnim from "./PanmanAnim.jsx";
 // Taste Spoon ― 味の特徴を一口で
 // 味覚特徴量レビュー × 正直パンマン
 // ─────────────────────────────────────────────────────────────
+
+// 吹き出しをタイプ風に表示。reduce 設定時は即時全文。
+function useTypewriter(text, trigger) {
+  const [n, setN] = useState(0);
+  useEffect(() => {
+    const reduce =
+      typeof window !== "undefined" &&
+      window.matchMedia &&
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (reduce || !text) {
+      setN(text.length);
+      return undefined;
+    }
+    setN(0);
+    let i = 0;
+    const id = setInterval(() => {
+      i += 1;
+      setN(i);
+      if (i >= text.length) clearInterval(id);
+    }, 28);
+    return () => clearInterval(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [text, trigger]);
+  return text.slice(0, n);
+}
 
 const AXES = [
   { key: "bitter", label: "苦味" },
@@ -163,6 +188,11 @@ export default function TasteSpoon() {
   const verdict = result ? matchVerdict(result.match) : null;
   const tier = result ? verdictTier(result.match) : null;
 
+  const comment = result?.taste?.comment ?? "";
+  const typed = useTypewriter(comment, runSeq);
+  const bubbleText = loading ? "ふむふむ…正直に味見中" : typed;
+  const typing = !loading && typed.length < comment.length;
+
   return (
     <div style={S.page}>
       <style>{CSS}</style>
@@ -236,18 +266,27 @@ export default function TasteSpoon() {
               <span style={{ ...S.tierLabel, color: tier.tone }}>{tier.tier}</span>
             </div>
 
-            <div style={S.dishLine}>
-              <span style={S.dishName}>{result.taste.dish}</span>
-              <span style={S.subVerdict}>（{verdict.label}）</span>
-            </div>
-
-            {/* 理由（正直パンマンの一言）を主役の一つとして強調 */}
-            <div style={S.reasonBox}>
+            {/* 正直パンマンの吹き出し（しっぽで真上のパンマンを指す）*/}
+            <div
+              key={loading ? "bubble-loading" : `bubble-${tier.state}-${runSeq}`}
+              className="panman-bubble-pop"
+              style={S.speechBubble}
+            >
+              <span style={S.bubbleTailOuter} aria-hidden="true" />
+              <span style={S.bubbleTailInner} aria-hidden="true" />
               <div style={S.reasonHead}>
                 <span style={S.reasonFace}>🍞</span>
                 <span style={S.panmanName}>正直パンマンの見立て</span>
               </div>
-              <p style={S.reasonText}>{result.taste.comment}</p>
+              <p style={S.reasonText}>
+                {bubbleText}
+                {typing && <span className="panman-caret" style={S.caret}>▍</span>}
+              </p>
+            </div>
+
+            <div style={S.dishLine}>
+              <span style={S.dishName}>{result.taste.dish}</span>
+              <span style={S.subVerdict}>（{verdict.label}）</span>
             </div>
 
             {/* スコアは補助 */}
@@ -311,7 +350,10 @@ const S = {
   dishLine: { textAlign: "center", marginBottom: 14 },
   dishName: { fontSize: 18, fontWeight: 700, color: "#3d2f1e" },
   subVerdict: { fontSize: 13, color: "#9b7d54", marginLeft: 4 },
-  reasonBox: { background: "#fff5e6", border: "1.5px solid #f0d9b5", borderRadius: 14, padding: "12px 14px", marginBottom: 14 },
+  speechBubble: { position: "relative", background: "#fff5e6", border: "2px solid #f0d9b5", borderRadius: 14, padding: "12px 14px", margin: "10px 4px 14px", boxShadow: "0 3px 10px rgba(160,120,60,.10)" },
+  bubbleTailOuter: { position: "absolute", top: -12, left: "50%", marginLeft: -11, width: 0, height: 0, borderLeft: "11px solid transparent", borderRight: "11px solid transparent", borderBottom: "12px solid #f0d9b5" },
+  bubbleTailInner: { position: "absolute", top: -9, left: "50%", marginLeft: -9, width: 0, height: 0, borderLeft: "9px solid transparent", borderRight: "9px solid transparent", borderBottom: "9px solid #fff5e6" },
+  caret: { display: "inline-block", marginLeft: 1, color: "#d9822b", fontWeight: 400 },
   reasonHead: { display: "flex", alignItems: "center", gap: 8, marginBottom: 4 },
   reasonFace: { fontSize: 20, lineHeight: 1 },
   reasonText: { margin: 0, fontSize: 16.5, lineHeight: 1.8, fontWeight: 600, color: "#4a3a26" },
@@ -367,11 +409,19 @@ input[type=range] { height: 22px; }
   0%, 100% { transform: rotate(-3deg); }
   50%      { transform: rotate(3deg); }
 }
+@keyframes panBubblePop {
+  0%   { opacity: 0; transform: scale(.7) translateY(-4px); }
+  60%  { opacity: 1; transform: scale(1.04) translateY(0); }
+  100% { opacity: 1; transform: scale(1); }
+}
+@keyframes panCaret { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
 /* 既定(reduced)は静止。動きは no-preference のときだけ付与 */
 @media (prefers-reduced-motion: no-preference) {
   .panman-pop   { animation: panPop .62s cubic-bezier(.22,.9,.3,1.25) both; }
   .panman-tilt  { animation: panTilt 1.6s ease-in-out infinite; will-change: transform; }
   .panman-shake { animation: panShake .5s ease-in-out infinite; will-change: transform; }
   .panman-sway  { animation: panSway 1.2s ease-in-out infinite; will-change: transform; }
+  .panman-bubble-pop { transform-origin: top center; animation: panBubblePop .4s ease-out both; }
+  .panman-caret { animation: panCaret .7s steps(1) infinite; }
 }
 `;
