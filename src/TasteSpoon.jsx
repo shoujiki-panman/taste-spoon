@@ -3,6 +3,7 @@ import {
   RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar,
   ResponsiveContainer,
 } from "recharts";
+import PanmanAnim from "./PanmanAnim.jsx";
 
 // ─────────────────────────────────────────────────────────────
 // Taste Spoon ― 味の特徴を一口で
@@ -122,9 +123,9 @@ function matchVerdict(score) {
 //     微妙    = 「ちょっと冒険」(>=40)
 //     合わない = 「覚悟して行こう」(<40)
 function verdictTier(score) {
-  if (score >= 55) return { tier: "合う", img: "agau", tone: "#2f9e44" };
-  if (score >= 40) return { tier: "微妙", img: "bimyo", tone: "#f08c00" };
-  return { tier: "合わない", img: "awanai", tone: "#e8590c" };
+  if (score >= 55) return { tier: "合う", state: "good", tone: "#2f9e44" };
+  if (score >= 40) return { tier: "微妙", state: "hmm", tone: "#f08c00" };
+  return { tier: "合わない", state: "bad", tone: "#e8590c" };
 }
 
 export default function TasteSpoon() {
@@ -181,7 +182,7 @@ export default function TasteSpoon() {
       </p>
 
       <div style={S.idleWrap}>
-        <img className="panman-bob" style={S.idleImg} src="/panman/idle.png" alt="正直パンマン" />
+        <PanmanAnim state="idle" size={96} />
       </div>
 
       <section style={S.card}>
@@ -222,14 +223,13 @@ export default function TasteSpoon() {
           <div style={{ ...S.verdictCard, borderColor: tier.tone }}>
             <div style={S.tierRow}>
               <span
-                key={loading ? "loading" : `${tier.img}-${runSeq}`}
+                key={loading ? "loading" : `${tier.state}-${runSeq}`}
                 className="panman-pop"
                 style={S.tierImgWrap}
               >
-                <img
-                  className="panman-breathe"
-                  style={S.tierImg}
-                  src={loading ? "/panman/loading.png" : `/panman/${tier.img}.png`}
+                <PanmanAnim
+                  state={loading ? "loading" : tier.state}
+                  size={112}
                   alt={loading ? "正直パンマンが調査中" : `正直パンマン（${tier.tier}）`}
                 />
               </span>
@@ -305,9 +305,7 @@ const S = {
   verdictCard: { border: "3px solid", borderRadius: 18, padding: "20px 18px 18px", background: "#fffefb", marginBottom: 14 },
   tierRow: { display: "flex", alignItems: "center", justifyContent: "center", gap: 12, margin: "2px 0 10px" },
   tierImgWrap: { display: "inline-flex", lineHeight: 0 },
-  tierImg: { width: 104, height: 104, objectFit: "contain", display: "block" },
   idleWrap: { display: "flex", justifyContent: "center", margin: "2px 0 14px" },
-  idleImg: { width: 84, height: 84, objectFit: "contain", imageRendering: "pixelated" },
   tierEmoji: { fontSize: 36, lineHeight: 1 },
   tierLabel: { fontFamily: "'Bagel Fat One',sans-serif", fontSize: 40, fontWeight: 800, letterSpacing: "1px", lineHeight: 1 },
   dishLine: { textAlign: "center", marginBottom: 14 },
@@ -353,14 +351,27 @@ input[type=range] { height: 22px; }
   86%  { transform: translateY(-2px) scale(1.02); }
   100% { opacity: 1; transform: translateY(0) scale(1); }
 }
-@keyframes panBreathe {
-  0%, 100% { transform: translateY(0) scale(1) rotate(0deg); }
-  50%      { transform: translateY(-3px) scale(1.018) rotate(-1.5deg); }
+@keyframes panTilt {
+  0%, 100% { transform: rotate(-5deg); }
+  50%      { transform: rotate(5deg); }
+}
+@keyframes panShake {
+  0%, 100% { transform: translateX(0) rotate(0deg); }
+  15% { transform: translateX(-3px) rotate(-2.5deg); }
+  30% { transform: translateX(3px) rotate(2.5deg); }
+  45% { transform: translateX(-2px) rotate(-1.5deg); }
+  60% { transform: translateX(2px) rotate(1.5deg); }
+  75% { transform: translateX(-1px) rotate(0deg); }
+}
+@keyframes panSway {
+  0%, 100% { transform: rotate(-3deg); }
+  50%      { transform: rotate(3deg); }
 }
 /* 既定(reduced)は静止。動きは no-preference のときだけ付与 */
 @media (prefers-reduced-motion: no-preference) {
-  .panman-pop { animation: panPop .62s cubic-bezier(.22,.9,.3,1.25) both; }
-  .panman-breathe { animation: panBreathe 3.2s ease-in-out infinite; will-change: transform; }
-  .panman-bob { animation: panBreathe 3.2s ease-in-out infinite; will-change: transform; }
+  .panman-pop   { animation: panPop .62s cubic-bezier(.22,.9,.3,1.25) both; }
+  .panman-tilt  { animation: panTilt 1.6s ease-in-out infinite; will-change: transform; }
+  .panman-shake { animation: panShake .5s ease-in-out infinite; will-change: transform; }
+  .panman-sway  { animation: panSway 1.2s ease-in-out infinite; will-change: transform; }
 }
 `;
