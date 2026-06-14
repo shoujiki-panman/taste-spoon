@@ -133,6 +133,7 @@ export default function TasteSpoon() {
   const [result, setResult] = useState({ taste: SAMPLE_TASTE, match: calcMatch(SAMPLE_TASTE, DEFAULT_PROFILE) });
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState("");
+  const [runSeq, setRunSeq] = useState(0);
   const resultRef = useRef(null);
 
   const run = async () => {
@@ -143,6 +144,7 @@ export default function TasteSpoon() {
       const taste = await analyzeTaste(text.trim());
       const match = calcMatch(taste, profile);
       setResult({ taste, match });
+      setRunSeq((n) => n + 1);
       setTimeout(() => resultRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 100);
     } catch (e) {
       setErr("味の分解に失敗しました。もう一度試してください。");
@@ -219,12 +221,18 @@ export default function TasteSpoon() {
           {/* ── 判定カード（主役: 3段階判定 + 正直パンマンの理由）── */}
           <div style={{ ...S.verdictCard, borderColor: tier.tone }}>
             <div style={S.tierRow}>
-              <img
-                className="panman-bob"
-                style={S.tierImg}
-                src={loading ? "/panman/loading.png" : `/panman/${tier.img}.png`}
-                alt={loading ? "正直パンマンが調査中" : `正直パンマン（${tier.tier}）`}
-              />
+              <span
+                key={loading ? "loading" : `${tier.img}-${runSeq}`}
+                className="panman-pop"
+                style={S.tierImgWrap}
+              >
+                <img
+                  className="panman-breathe"
+                  style={S.tierImg}
+                  src={loading ? "/panman/loading.png" : `/panman/${tier.img}.png`}
+                  alt={loading ? "正直パンマンが調査中" : `正直パンマン（${tier.tier}）`}
+                />
+              </span>
               <span style={{ ...S.tierLabel, color: tier.tone }}>{tier.tier}</span>
             </div>
 
@@ -296,7 +304,8 @@ const S = {
   sliderVal: { width: 18, textAlign: "right", fontWeight: 700, color: "#c0392b" },
   verdictCard: { border: "3px solid", borderRadius: 18, padding: "20px 18px 18px", background: "#fffefb", marginBottom: 14 },
   tierRow: { display: "flex", alignItems: "center", justifyContent: "center", gap: 12, margin: "2px 0 10px" },
-  tierImg: { width: 96, height: 96, objectFit: "contain", imageRendering: "pixelated" },
+  tierImgWrap: { display: "inline-flex", lineHeight: 0 },
+  tierImg: { width: 104, height: 104, objectFit: "contain", display: "block" },
   idleWrap: { display: "flex", justifyContent: "center", margin: "2px 0 14px" },
   idleImg: { width: 84, height: 84, objectFit: "contain", imageRendering: "pixelated" },
   tierEmoji: { fontSize: 36, lineHeight: 1 },
@@ -337,7 +346,21 @@ const CSS = `
 * { -webkit-tap-highlight-color: transparent; }
 body { margin: 0; background: #fdf6e7; }
 input[type=range] { height: 22px; }
-@keyframes panbob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-7px); } }
-.panman-bob { animation: panbob 2.6s ease-in-out infinite; will-change: transform; }
-@media (prefers-reduced-motion: reduce) { .panman-bob { animation: none; } }
+@keyframes panPop {
+  0%   { opacity: 0; transform: translateY(18px) scale(.55); }
+  55%  { opacity: 1; transform: translateY(-7px) scale(1.10); }
+  72%  { transform: translateY(3px) scale(.96); }
+  86%  { transform: translateY(-2px) scale(1.02); }
+  100% { opacity: 1; transform: translateY(0) scale(1); }
+}
+@keyframes panBreathe {
+  0%, 100% { transform: translateY(0) scale(1) rotate(0deg); }
+  50%      { transform: translateY(-3px) scale(1.018) rotate(-1.5deg); }
+}
+/* 既定(reduced)は静止。動きは no-preference のときだけ付与 */
+@media (prefers-reduced-motion: no-preference) {
+  .panman-pop { animation: panPop .62s cubic-bezier(.22,.9,.3,1.25) both; }
+  .panman-breathe { animation: panBreathe 3.2s ease-in-out infinite; will-change: transform; }
+  .panman-bob { animation: panBreathe 3.2s ease-in-out infinite; will-change: transform; }
+}
 `;
