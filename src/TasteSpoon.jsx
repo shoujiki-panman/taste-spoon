@@ -234,6 +234,88 @@ function intentRemark(taste, intents) {
   return null;
 }
 
+// 軸ごとの言い回し（good=刺さる理由 / bad=注意点）。hi=その軸が強い店, lo=弱い店。
+const AXIS_PHRASE = {
+  bitter: {
+    hi: { good: "しっかりした苦味が、好きな人にはたまらないはず。", bad: "ただ苦味は強め。苦手な日はしんどいかも。" },
+    lo: { good: "苦味は控えめで、すっと入る優しさ。", bad: "苦味のパンチは弱め。物足りない人もいるかも。" },
+  },
+  sour: {
+    hi: { good: "爽やかな酸味が効いて、後味が軽い。", bad: "酸味が立つので、苦手だと気になるかも。" },
+    lo: { good: "酸味は穏やかで、丸い味わい。", bad: "酸味は少なめ。爽やかさ狙いだと違うかも。" },
+  },
+  roast: {
+    hi: { good: "深煎りの香ばしさがガツンと刺さる。", bad: "焦がし感が強め。軽い味が好きだと重いかも。" },
+    lo: { good: "浅めで軽やか、後を引かない。", bad: "ロースト感は弱め。香ばしさ狙いだと薄いかも。" },
+  },
+  creamy: {
+    hi: { good: "まろやかなコクが心地いい。", bad: "こってり寄りで、重く感じる人も。" },
+    lo: { good: "後味すっきりで重くない。", bad: "コクは控えめ。濃厚さ狙いだと物足りないかも。" },
+  },
+  firstTime: {
+    hi: { good: "クセが少なく、誰でもすっと馴染む。", bad: "優等生すぎて、刺激が欲しい人には地味かも。" },
+    lo: { good: "一筋縄じゃない個性が光る。", bad: "初見だと面食らうかも。覚悟はいる。" },
+  },
+  picky: {
+    hi: { good: "人を選ぶ尖りを、むしろ楽しめるタイプ向け。", bad: "クセが強いので、無難狙いにはきついかも。" },
+    lo: { good: "万人受けする食べやすさ。", bad: "尖りは控えめ。冒険したい日には優等生すぎるかも。" },
+  },
+};
+
+// 一番「際立ち、かつ好みに近い」軸＝合う理由 / 一番摩擦の大きい軸＝注意点
+function reasonAxes(taste, profile) {
+  let reason = null, caution = null, bestR = -Infinity, bestC = -Infinity;
+  for (const a of AXES) {
+    const t = taste[a.key] ?? 2.5;
+    const p = profile[a.key] ?? 2.5;
+    const rScore = Math.abs(t - 2.5) - Math.abs(t - p);
+    const fric = Math.abs(t - p);
+    if (rScore > bestR) { bestR = rScore; reason = a.key; }
+    if (fric > bestC) { bestC = fric; caution = a.key; }
+  }
+  if (caution === reason) {
+    let second = null, s = -Infinity;
+    for (const a of AXES) {
+      if (a.key === reason) continue;
+      const fr = Math.abs((taste[a.key] ?? 2.5) - (profile[a.key] ?? 2.5));
+      if (fr > s) { s = fr; second = a.key; }
+    }
+    caution = second ?? caution;
+  }
+  return { reason, caution };
+}
+
+const dirOf = (taste, key) => ((taste[key] ?? 2.5) > 2.5 ? "hi" : "lo");
+
+// 正直パンマンの2行見立て（合う理由 / 注意点）。合わない時は「なぜ / でもこういう人には」。
+function buildReasonLines(taste, profile, state) {
+  if (!taste) return { line1: "", line2: "" };
+  const { reason, caution } = reasonAxes(taste, profile);
+  const rGood = AXIS_PHRASE[reason]?.[dirOf(taste, reason)]?.good;
+  const cBad = AXIS_PHRASE[caution]?.[dirOf(taste, caution)]?.bad;
+  if (state === "bad") {
+    return {
+      line1: cBad ?? "今日のあなたには、ちょっと合わないかも。",
+      line2: rGood ? `でも、${rGood}` : "でも、刺さる人にはちゃんと刺さる。",
+    };
+  }
+  return {
+    line1: rGood ?? "好みに近いポイントがある。",
+    line2: cBad ?? "ただ、人によって好みは分かれるかも。",
+  };
+}
+
+// 食後フィードバックのタグ（複数選択・店/料理キーで localStorage 保存）
+const MEAL_TAGS = ["また行きたい", "思ったより苦い", "クセ強め", "ボリューム◎", "口に合わなかった", "期待通り"];
+const TAGS_KEY = "tasteSpoon.mealTags.v1";
+function loadTagMap() {
+  try {
+    return JSON.parse(localStorage.getItem(TAGS_KEY)) || {};
+  } catch {
+    return {};
+  }
+}
+
 export default function TasteSpoon() {
   const [text, setText] = useState(SAMPLE);
   const [store, setStore] = useState(loadStore);
@@ -249,7 +331,25 @@ export default function TasteSpoon() {
   const [runSeq, setRunSeq] = useState(0);
   const [feedback, setFeedback] = useState(null); // null | 'fit' | 'meh' | 'no'
   const [intents, setIntents] = useState(() => new Set()); // 今日の気分（任意・複数）
+  const [tagMap, setTagMap] = useState(loadTagMap); // 食後タグ（料理名キー）
   const resultRef = useRef(null);
+
+  const dishKey = result?.taste?.dish ?? "";
+  const dishTags = new Set(tagMap[dishKey] ?? []);
+  const toggleTag = (tag) => {
+    setTagMap((m) => {
+      const cur = new Set(m[dishKey] ?? []);
+      if (cur.has(tag)) cur.delete(tag);
+      else cur.add(tag);
+      const next = { ...m, [dishKey]: Array.from(cur) };
+      try {
+        localStorage.setItem(TAGS_KEY, JSON.stringify(next));
+      } catch {
+        /* 保存失敗は無視 */
+      }
+      return next;
+    });
+  };
 
   const toggleIntent = (id) => {
     setIntents((prev) => {
@@ -317,10 +417,11 @@ export default function TasteSpoon() {
   const tier = result ? verdictTier(shownMatch) : null;
   const remark = result ? intentRemark(result.taste, intents) : null;
 
-  const comment = result?.taste?.comment ?? "";
-  const typed = useTypewriter(comment, runSeq);
+  // 2行見立て（1行目=合う理由 / 2行目=注意点。合わない時は なぜ/でもこういう人には）
+  const lines = result ? buildReasonLines(result.taste, profile, tier.state) : { line1: "", line2: "" };
+  const typed = useTypewriter(lines.line1, runSeq);
   const bubbleText = loading ? "ふむふむ…正直に味見中" : typed;
-  const typing = !loading && typed.length < comment.length;
+  const typing = !loading && typed.length < lines.line1.length;
 
   return (
     <div style={S.page}>
@@ -345,13 +446,13 @@ export default function TasteSpoon() {
       </div>
 
       <section style={S.card}>
-        <label style={S.label}>レビュー / 店の説明</label>
+        <label style={S.label}>口コミ・メニュー説明を貼り付け</label>
         <textarea
           style={S.textarea}
           value={text}
           onChange={(e) => setText(e.target.value)}
           rows={5}
-          placeholder="食べた感想や、店の説明文を貼ってください…"
+          placeholder="お店の口コミやメニューの説明を貼ってね（例: 食べログのレビュー、お店の紹介文 など）"
         />
 
         <div style={S.moodLabel}>今日はどんな気分？<span style={S.moodHint}>（任意・複数OK）</span></div>
@@ -432,6 +533,9 @@ export default function TasteSpoon() {
                 {bubbleText}
                 {typing && <span className="panman-caret" style={S.caret}>▍</span>}
               </p>
+              {!loading && !typing && lines.line2 && (
+                <p style={S.reasonText2}>{lines.line2}</p>
+              )}
               {!loading && !typing && remark && (
                 <p style={S.reasonRemark}>{remark}</p>
               )}
@@ -443,14 +547,17 @@ export default function TasteSpoon() {
             </div>
 
             {/* スコアは補助 */}
-            <div style={S.scoreAux}>
-              <span style={S.scoreAuxLabel}>あなたとの相性</span>
-              <div style={S.scoreAuxRight}>
-                <div style={S.barTrack}>
-                  <div style={{ ...S.barFill, width: `${shownMatch}%`, background: tier.tone }} />
+            <div style={S.scoreWrap}>
+              <div style={S.scoreAux}>
+                <span style={S.scoreAuxLabel}>あなたとの相性</span>
+                <div style={S.scoreAuxRight}>
+                  <div style={S.barTrack}>
+                    <div style={{ ...S.barFill, width: `${shownMatch}%`, background: tier.tone }} />
+                  </div>
+                  <span style={{ ...S.scoreAuxNum, color: tier.tone }}>{shownMatch}%</span>
                 </div>
-                <span style={{ ...S.scoreAuxNum, color: tier.tone }}>{shownMatch}%</span>
               </div>
+              <p style={S.scoreCaption}>あなたの好みにどれだけ近いか</p>
             </div>
 
             {learnCount < LEARN_THRESHOLD && (
@@ -473,6 +580,29 @@ export default function TasteSpoon() {
                   </div>
                 </>
               )}
+            </div>
+          )}
+
+          {/* 食後フィードバック（タグ・複数選択・localStorage保存）*/}
+          {!loading && (
+            <div style={S.mealBox}>
+              <p style={S.mealTitle}>食べた後は？<span style={S.moodHint}>（タップで記録）</span></p>
+              <div style={S.chipWrap}>
+                {MEAL_TAGS.map((t) => {
+                  const on = dishTags.has(t);
+                  return (
+                    <button
+                      key={t}
+                      type="button"
+                      aria-pressed={on}
+                      onClick={() => toggleTag(t)}
+                      style={{ ...S.chip, ...(on ? S.chipOn : null) }}
+                    >
+                      {on ? "✓ " : ""}{t}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
           )}
 
@@ -549,7 +679,12 @@ const S = {
   reasonHead: { display: "flex", alignItems: "center", gap: 8, marginBottom: 4 },
   reasonFace: { fontSize: 20, lineHeight: 1 },
   reasonText: { margin: 0, fontSize: 16.5, lineHeight: 1.8, fontWeight: 600, color: "#4a3a26" },
+  reasonText2: { margin: "6px 0 0", fontSize: 14.5, lineHeight: 1.75, fontWeight: 600, color: "#8a6f4a" },
   reasonRemark: { margin: "8px 0 0", paddingTop: 8, borderTop: "1px dashed #f0d9b5", fontSize: 14, lineHeight: 1.7, fontWeight: 600, color: "#d9822b" },
+  scoreWrap: { margin: "2px 0 0" },
+  scoreCaption: { margin: "5px 0 0", fontSize: 11.5, color: "#a08a6a" },
+  mealBox: { margin: "2px 0 14px" },
+  mealTitle: { margin: "0 0 8px", fontSize: 13.5, fontWeight: 700, color: "#7a5c34" },
   scoreAux: { display: "flex", alignItems: "center", gap: 12 },
   scoreAuxLabel: { fontSize: 12.5, fontWeight: 700, color: "#a08a6a", whiteSpace: "nowrap" },
   scoreAuxRight: { flex: 1, display: "flex", alignItems: "center", gap: 10 },
