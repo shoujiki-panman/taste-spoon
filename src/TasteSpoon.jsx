@@ -115,6 +115,18 @@ function matchVerdict(score) {
   return { label: "覚悟して行こう", tone: "#e8590c" };
 }
 
+// 3段階判定。閾値(55 / 40)は matchVerdict の境界(75 / 55 / 40)の部分集合。
+// → matchVerdict の各バンドは必ずどれか 1 つの tier に丸ごと収まるので、
+//   特大の3段階判定とサブ表示の matchVerdict ラベルは構造的に矛盾しない。
+//     合う    = 「ばっちり合うはず」(>=75) + 「わりと好きかも」(>=55)
+//     微妙    = 「ちょっと冒険」(>=40)
+//     合わない = 「覚悟して行こう」(<40)
+function verdictTier(score) {
+  if (score >= 55) return { tier: "合う", img: "agau", tone: "#2f9e44" };
+  if (score >= 40) return { tier: "微妙", img: "bimyo", tone: "#f08c00" };
+  return { tier: "合わない", img: "awanai", tone: "#e8590c" };
+}
+
 export default function TasteSpoon() {
   const [text, setText] = useState(SAMPLE);
   const [profile, setProfile] = useState(DEFAULT_PROFILE);
@@ -146,6 +158,7 @@ export default function TasteSpoon() {
 
   const radarData = result ? AXES.map((a) => ({ axis: a.label, value: result.taste[a.key] ?? 0 })) : [];
   const verdict = result ? matchVerdict(result.match) : null;
+  const tier = result ? verdictTier(result.match) : null;
 
   return (
     <div style={S.page}>
@@ -164,6 +177,10 @@ export default function TasteSpoon() {
         レビューや店の説明を入れると、味を6つの特徴量に分解して、
         あなたとの相性を判定します。
       </p>
+
+      <div style={S.idleWrap}>
+        <img className="panman-bob" style={S.idleImg} src="/panman/idle.png" alt="正直パンマン" />
+      </div>
 
       <section style={S.card}>
         <label style={S.label}>レビュー / 店の説明</label>
@@ -199,11 +216,45 @@ export default function TasteSpoon() {
 
       {result && (
         <section style={S.resultCard} ref={resultRef}>
-          <div style={S.dishRow}>
-            <span style={S.dishLabel}>分解結果</span>
-            <h2 style={S.dish}>{result.taste.dish}</h2>
+          {/* ── 判定カード（主役: 3段階判定 + 正直パンマンの理由）── */}
+          <div style={{ ...S.verdictCard, borderColor: tier.tone }}>
+            <div style={S.tierRow}>
+              <img
+                className="panman-bob"
+                style={S.tierImg}
+                src={loading ? "/panman/loading.png" : `/panman/${tier.img}.png`}
+                alt={loading ? "正直パンマンが調査中" : `正直パンマン（${tier.tier}）`}
+              />
+              <span style={{ ...S.tierLabel, color: tier.tone }}>{tier.tier}</span>
+            </div>
+
+            <div style={S.dishLine}>
+              <span style={S.dishName}>{result.taste.dish}</span>
+              <span style={S.subVerdict}>（{verdict.label}）</span>
+            </div>
+
+            {/* 理由（正直パンマンの一言）を主役の一つとして強調 */}
+            <div style={S.reasonBox}>
+              <div style={S.reasonHead}>
+                <span style={S.reasonFace}>🍞</span>
+                <span style={S.panmanName}>正直パンマンの見立て</span>
+              </div>
+              <p style={S.reasonText}>{result.taste.comment}</p>
+            </div>
+
+            {/* スコアは補助 */}
+            <div style={S.scoreAux}>
+              <span style={S.scoreAuxLabel}>あなたとの相性</span>
+              <div style={S.scoreAuxRight}>
+                <div style={S.barTrack}>
+                  <div style={{ ...S.barFill, width: `${result.match}%`, background: tier.tone }} />
+                </div>
+                <span style={{ ...S.scoreAuxNum, color: tier.tone }}>{result.match}%</span>
+              </div>
+            </div>
           </div>
 
+          {/* レーダー（Step 4 で詳細トグルへ降格予定。今は下にそのまま表示）*/}
           <div style={S.chartWrap}>
             <ResponsiveContainer width="100%" height={300}>
               <RadarChart data={radarData} outerRadius="72%">
@@ -213,25 +264,6 @@ export default function TasteSpoon() {
                 <Radar dataKey="value" stroke="#c0392b" fill="#e74c3c" fillOpacity={0.45} />
               </RadarChart>
             </ResponsiveContainer>
-          </div>
-
-          <div style={{ ...S.matchBox, borderColor: verdict.tone }}>
-            <div style={S.matchHead}>
-              <span style={S.matchLabel}>あなたとの相性</span>
-              <span style={{ ...S.matchScore, color: verdict.tone }}>{result.match}%</span>
-            </div>
-            <div style={S.barTrack}>
-              <div style={{ ...S.barFill, width: `${result.match}%`, background: verdict.tone }} />
-            </div>
-            <div style={{ ...S.verdict, color: verdict.tone }}>{verdict.label}</div>
-          </div>
-
-          <div style={S.panman}>
-            <div style={S.panmanFace}>🍞</div>
-            <div style={S.bubble}>
-              <span style={S.panmanName}>正直パンマン</span>
-              <p style={S.panmanText}>{result.taste.comment}</p>
-            </div>
           </div>
         </section>
       )}
@@ -262,6 +294,24 @@ const S = {
   sliderLabel: { width: 110, fontSize: 13, fontWeight: 600, color: "#6a5236" },
   slider: { flex: 1, accentColor: "#c0392b" },
   sliderVal: { width: 18, textAlign: "right", fontWeight: 700, color: "#c0392b" },
+  verdictCard: { border: "3px solid", borderRadius: 18, padding: "20px 18px 18px", background: "#fffefb", marginBottom: 14 },
+  tierRow: { display: "flex", alignItems: "center", justifyContent: "center", gap: 12, margin: "2px 0 10px" },
+  tierImg: { width: 96, height: 96, objectFit: "contain", imageRendering: "pixelated" },
+  idleWrap: { display: "flex", justifyContent: "center", margin: "2px 0 14px" },
+  idleImg: { width: 84, height: 84, objectFit: "contain", imageRendering: "pixelated" },
+  tierEmoji: { fontSize: 36, lineHeight: 1 },
+  tierLabel: { fontFamily: "'Bagel Fat One',sans-serif", fontSize: 40, fontWeight: 800, letterSpacing: "1px", lineHeight: 1 },
+  dishLine: { textAlign: "center", marginBottom: 14 },
+  dishName: { fontSize: 18, fontWeight: 700, color: "#3d2f1e" },
+  subVerdict: { fontSize: 13, color: "#9b7d54", marginLeft: 4 },
+  reasonBox: { background: "#fff5e6", border: "1.5px solid #f0d9b5", borderRadius: 14, padding: "12px 14px", marginBottom: 14 },
+  reasonHead: { display: "flex", alignItems: "center", gap: 8, marginBottom: 4 },
+  reasonFace: { fontSize: 20, lineHeight: 1 },
+  reasonText: { margin: 0, fontSize: 16.5, lineHeight: 1.8, fontWeight: 600, color: "#4a3a26" },
+  scoreAux: { display: "flex", alignItems: "center", gap: 12 },
+  scoreAuxLabel: { fontSize: 12.5, fontWeight: 700, color: "#a08a6a", whiteSpace: "nowrap" },
+  scoreAuxRight: { flex: 1, display: "flex", alignItems: "center", gap: 10 },
+  scoreAuxNum: { fontSize: 20, fontWeight: 800, fontFamily: "'Bagel Fat One',sans-serif", minWidth: 52, textAlign: "right" },
   dishRow: { marginBottom: 6 },
   dishLabel: { fontSize: 12, fontWeight: 700, color: "#bfa178", letterSpacing: "1px" },
   dish: { margin: "2px 0 8px", fontSize: 22, color: "#3d2f1e" },
@@ -287,4 +337,7 @@ const CSS = `
 * { -webkit-tap-highlight-color: transparent; }
 body { margin: 0; background: #fdf6e7; }
 input[type=range] { height: 22px; }
+@keyframes panbob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-7px); } }
+.panman-bob { animation: panbob 2.6s ease-in-out infinite; will-change: transform; }
+@media (prefers-reduced-motion: reduce) { .panman-bob { animation: none; } }
 `;
