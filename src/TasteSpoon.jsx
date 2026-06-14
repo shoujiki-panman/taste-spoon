@@ -181,6 +181,57 @@ function verdictTier(score) {
   return { tier: "合わない", state: "bad", tone: "#e8590c" };
 }
 
+// 今日の気分／期待のチップ（任意・複数可）
+const INTENTS = [
+  { id: "kotteri", label: "こってり食べたい" },
+  { id: "sappari", label: "さっぱりがいい" },
+  { id: "adventure", label: "冒険したい" },
+  { id: "safe", label: "無難にいきたい" },
+  { id: "noFail", label: "失敗したくない" },
+];
+// 同時に成立しないチップ（選ぶと相手を外す）
+const INTENT_CONFLICTS = {
+  kotteri: ["sappari"],
+  sappari: ["kotteri"],
+  adventure: ["safe", "noFail"],
+  safe: ["adventure"],
+  noFail: ["adventure"],
+};
+
+// calcMatch の結果(base)に「気分」による後段補正を足す。本体は不変。
+// taste の各軸は 0..5。中心 2.5 からの振れで補正量を決める。
+function intentAdjustedMatch(baseMatch, taste, intents) {
+  if (!intents || intents.size === 0) return baseMatch;
+  const pickyDev = (taste?.picky ?? 2.5) - 2.5; // + = 人を選ぶ
+  const creamyDev = (taste?.creamy ?? 2.5) - 2.5; // + = こってり
+  let delta = 0;
+  if (intents.has("adventure")) delta += 4 * pickyDev;
+  if (intents.has("safe")) delta -= 4 * Math.max(0, pickyDev);
+  if (intents.has("noFail")) delta -= 5 * Math.max(0, pickyDev);
+  if (intents.has("kotteri")) delta += 3 * creamyDev;
+  if (intents.has("sappari")) delta -= 3 * creamyDev;
+  return Math.max(0, Math.min(100, Math.round(baseMatch + delta)));
+}
+
+// 気分が効いたときの、正直パンマンの“理由”補足（在キャラ・任意の1行）
+function intentRemark(taste, intents) {
+  if (!intents || intents.size === 0) return null;
+  const picky = (taste?.picky ?? 2.5) >= 3.5;
+  const creamy = (taste?.creamy ?? 2.5) >= 3.5;
+  const light = (taste?.creamy ?? 2.5) <= 1.5;
+  if (intents.has("adventure") && picky)
+    return "冒険したい今日なら、この尖り具合はむしろ楽しめるはず。";
+  if ((intents.has("noFail") || intents.has("safe")) && picky)
+    return "“失敗したくない”なら、ここは少し攻めすぎかも。覚悟がある日に取っておこう。";
+  if (intents.has("kotteri") && creamy)
+    return "こってり気分にはこのコク、ちゃんと応えてくれる。";
+  if (intents.has("kotteri") && light)
+    return "こってり狙いだと、ここはちょっと物足りないかも。";
+  if (intents.has("sappari") && creamy)
+    return "さっぱりいきたい日には、これは少し重く感じるかもね。";
+  return null;
+}
+
 export default function TasteSpoon() {
   const [text, setText] = useState(SAMPLE);
   const [store, setStore] = useState(loadStore);
@@ -195,7 +246,21 @@ export default function TasteSpoon() {
   const [err, setErr] = useState("");
   const [runSeq, setRunSeq] = useState(0);
   const [feedback, setFeedback] = useState(null); // null | 'fit' | 'meh' | 'no'
+  const [intents, setIntents] = useState(() => new Set()); // 今日の気分（任意・複数）
   const resultRef = useRef(null);
+
+  const toggleIntent = (id) => {
+    setIntents((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+        for (const c of INTENT_CONFLICTS[id] ?? []) next.delete(c);
+      }
+      return next;
+    });
+  };
 
   // profile / 学習回数を localStorage に永続化
   useEffect(() => {
@@ -244,8 +309,11 @@ export default function TasteSpoon() {
   }, [profile]);
 
   const radarData = result ? AXES.map((a) => ({ axis: a.label, value: result.taste[a.key] ?? 0 })) : [];
-  const verdict = result ? matchVerdict(result.match) : null;
-  const tier = result ? verdictTier(result.match) : null;
+  // calcMatch の生値(result.match)は保持し、表示は気分補正後の値で行う
+  const shownMatch = result ? intentAdjustedMatch(result.match, result.taste, intents) : 0;
+  const verdict = result ? matchVerdict(shownMatch) : null;
+  const tier = result ? verdictTier(shownMatch) : null;
+  const remark = result ? intentRemark(result.taste, intents) : null;
 
   const comment = result?.taste?.comment ?? "";
   const typed = useTypewriter(comment, runSeq);
@@ -283,6 +351,25 @@ export default function TasteSpoon() {
           rows={5}
           placeholder="食べた感想や、店の説明文を貼ってください…"
         />
+
+        <div style={S.moodLabel}>今日はどんな気分？<span style={S.moodHint}>（任意・複数OK）</span></div>
+        <div style={S.chipWrap}>
+          {INTENTS.map((it) => {
+            const on = intents.has(it.id);
+            return (
+              <button
+                key={it.id}
+                type="button"
+                aria-pressed={on}
+                onClick={() => toggleIntent(it.id)}
+                style={{ ...S.chip, ...(on ? S.chipOn : null) }}
+              >
+                {on ? "✓ " : ""}{it.label}
+              </button>
+            );
+          })}
+        </div>
+
         <button style={{ ...S.btn, opacity: loading ? 0.6 : 1 }} onClick={run} disabled={loading}>
           {loading ? "正直パンマンが味見中…" : "味を分解する"}
         </button>
@@ -343,6 +430,9 @@ export default function TasteSpoon() {
                 {bubbleText}
                 {typing && <span className="panman-caret" style={S.caret}>▍</span>}
               </p>
+              {!loading && !typing && remark && (
+                <p style={S.reasonRemark}>{remark}</p>
+              )}
             </div>
 
             <div style={S.dishLine}>
@@ -355,9 +445,9 @@ export default function TasteSpoon() {
               <span style={S.scoreAuxLabel}>あなたとの相性</span>
               <div style={S.scoreAuxRight}>
                 <div style={S.barTrack}>
-                  <div style={{ ...S.barFill, width: `${result.match}%`, background: tier.tone }} />
+                  <div style={{ ...S.barFill, width: `${shownMatch}%`, background: tier.tone }} />
                 </div>
-                <span style={{ ...S.scoreAuxNum, color: tier.tone }}>{result.match}%</span>
+                <span style={{ ...S.scoreAuxNum, color: tier.tone }}>{shownMatch}%</span>
               </div>
             </div>
 
@@ -418,7 +508,12 @@ const S = {
   label: { display: "block", fontWeight: 700, fontSize: 14, color: "#7a5c34", marginBottom: 8 },
   hint: { fontSize: 12.5, color: "#a08a6a", margin: "0 0 12px" },
   textarea: { width: "100%", boxSizing: "border-box", border: "1.5px solid #e3d2b4", borderRadius: 12, padding: 12, fontSize: 14, lineHeight: 1.7, resize: "vertical", fontFamily: "inherit", background: "#fffefb", color: "#3d2f1e" },
-  btn: { marginTop: 12, width: "100%", padding: "13px 0", border: "none", borderRadius: 12, background: "#c0392b", color: "#fff", fontSize: 15.5, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", letterSpacing: ".5px" },
+  moodLabel: { marginTop: 14, fontSize: 13.5, fontWeight: 700, color: "#7a5c34" },
+  moodHint: { fontSize: 12, fontWeight: 600, color: "#a08a6a", marginLeft: 4 },
+  chipWrap: { display: "flex", flexWrap: "wrap", gap: 8, marginTop: 10 },
+  chip: { minHeight: 44, padding: "0 16px", borderRadius: 999, border: "2px solid #e3d2b4", background: "#fffefb", color: "#7a5c34", fontFamily: "inherit", fontSize: 14, fontWeight: 700, cursor: "pointer", lineHeight: 1 },
+  chipOn: { borderColor: "#c0392b", background: "#c0392b", color: "#fff", boxShadow: "0 2px 8px rgba(192,57,43,.22)" },
+  btn: { marginTop: 14, width: "100%", padding: "13px 0", border: "none", borderRadius: 12, background: "#c0392b", color: "#fff", fontSize: 15.5, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", letterSpacing: ".5px" },
   err: { color: "#c0392b", fontSize: 13, marginTop: 8 },
   sliderRow: { display: "flex", alignItems: "center", gap: 10, marginBottom: 10 },
   sliderLabel: { width: 110, fontSize: 13, fontWeight: 600, color: "#6a5236" },
@@ -452,6 +547,7 @@ const S = {
   reasonHead: { display: "flex", alignItems: "center", gap: 8, marginBottom: 4 },
   reasonFace: { fontSize: 20, lineHeight: 1 },
   reasonText: { margin: 0, fontSize: 16.5, lineHeight: 1.8, fontWeight: 600, color: "#4a3a26" },
+  reasonRemark: { margin: "8px 0 0", paddingTop: 8, borderTop: "1px dashed #f0d9b5", fontSize: 14, lineHeight: 1.7, fontWeight: 600, color: "#d9822b" },
   scoreAux: { display: "flex", alignItems: "center", gap: 12 },
   scoreAuxLabel: { fontSize: 12.5, fontWeight: 700, color: "#a08a6a", whiteSpace: "nowrap" },
   scoreAuxRight: { flex: 1, display: "flex", alignItems: "center", gap: 10 },
