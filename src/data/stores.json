@@ -1,0 +1,148 @@
+{
+  "schemaVersion": 2,
+  "note": "Taste Spoon の種データ。axes は6軸(bitter/sour/roast/creamy/firstTime/picky, 0-5)で calcMatch にそのまま使える。profile=キャリブレーション用の『自分たち』。panmanVerdict=正解(味の判定)。spice(辛さ)は別フィルタで本検証の対象外。",
+  "limitation": "【既知の限界 / 検証結果】現行6軸＋calcMatch据置では、味の判定の一致は最大でも 5〜6/10 にとどまる。原因は、負側の店(物足りない/通好み/量少なめ)を分ける本当の要因『満足感・ボリューム(こってり〜あっさり)』が6軸に無いため。例: からやま(合う)と神座(微妙)は6軸ベクトルがほぼ同一で、満足感だけが違う。10/10 は sour=5/roast=5 のような嗜好と矛盾する過学習でしか得られず、ブランド『正直』に反するため不採用。profile は意味重視(B)を採用。根本解決は『満足感/volume』軸の追加(別タスク)。",
+  "profile": {
+    "label": "自分たち",
+    "axes": { "bitter": 0, "sour": 1, "roast": 3, "creamy": 5, "firstTime": 5, "picky": 0 },
+    "axesNote": "意味重視(正直)プロファイル。苦味嫌い(b0)/コク・こってり好き(c5)/万人受け志向(p0,f5)。検証一致 5/10。過学習を避けた値。",
+    "notes": [
+      "こってり・コク・ボリューム・満足感が好き",
+      "あっさり/繊細/淡白/通好み/量少なめは物足りない",
+      "中辛・甘酢はOK",
+      "飲み物の過剰で人工的な甘さ(バタービール系)は苦手"
+    ]
+  },
+  "stores": [
+    {
+      "id": "donq-lazona-kawasaki",
+      "name": "ドンク ラゾーナ川崎プラザ店",
+      "area": "川崎",
+      "genre": "ベーカリーカフェ",
+      "signature": "フレンチトースト",
+      "axes": { "bitter": 1, "sour": 1, "roast": 1, "creamy": 4, "firstTime": 5, "picky": 1 },
+      "panman": "甘くてボリュームたっぷり、アイスも付いてまず外さない。誰にでもやさしい一皿。",
+      "caution": "甘いのが主役。しょっぱい朝食気分だと方向違い。席が小さく2人だと窮屈。",
+      "recommend": "フレンチトースト＋コーヒーセット",
+      "tip": "",
+      "panmanVerdict": "合う"
+    },
+    {
+      "id": "newtorigin-ginza",
+      "name": "焼き鳥・釜飯 ニュー鳥ぎん",
+      "area": "銀座",
+      "genre": "和食/釜飯",
+      "signature": "鳥山菜の釜飯",
+      "axes": { "bitter": 1, "sour": 1, "roast": 3, "creamy": 1, "firstTime": 4, "picky": 1 },
+      "panman": "ボリュームと食べ応えで満足度高め。おこげの香ばしさが効いてる。銀座でこの量はお得感。",
+      "caution": "値段はやや張る。ただ量で納得できるタイプ。",
+      "recommend": "鳥山菜の釜飯（おこげ多めで頼める）",
+      "tip": "実は持ち帰りもできる",
+      "panmanVerdict": "合う"
+    },
+    {
+      "id": "rasmi-kawasaki",
+      "name": "インドレストラン ラスミ",
+      "area": "川崎",
+      "genre": "インド料理",
+      "signature": "ナン＋バターチキン（甘口）",
+      "axes": { "bitter": 1, "sour": 1, "roast": 2, "creamy": 4, "firstTime": 5, "picky": 2 },
+      "panman": "ナンが大きく柔らかく少し甘い、カレーはコク深くて何度でもいける定番。通うやつ。",
+      "caution": "ガーリックライスは重め＆味薄め。塩で調整すると化ける。",
+      "recommend": "ナン＋バターチキン（甘口）／ガーリックライス（塩がけ）",
+      "tip": "待っているとラッシーをサービスしてくれることがある",
+      "panmanVerdict": "合う"
+    },
+    {
+      "id": "karayama-kawasaki",
+      "name": "からやま",
+      "area": "川崎",
+      "genre": "からあげ/弁当",
+      "signature": "唐揚げ弁当",
+      "axes": { "bitter": 1, "sour": 1, "roast": 2, "creamy": 1, "firstTime": 5, "picky": 1 },
+      "panman": "一個一個デカくてジューシー、極ダレかければご飯もキャベツも全部うまい。満足度の塊。",
+      "caution": "ボリューム＆揚げ物で重め。軽く済ませたい日には不向き。",
+      "recommend": "唐揚げ弁当（極ダレをかけて）",
+      "tip": "毎回割引クーポンがもらえる",
+      "panmanVerdict": "合う"
+    },
+    {
+      "id": "hioki-shinagawa",
+      "name": "品川ひおき",
+      "area": "品川",
+      "genre": "定食",
+      "signature": "チキン南蛮定食",
+      "axes": { "bitter": 1, "sour": 2, "roast": 2, "creamy": 3, "firstTime": 5, "picky": 1 },
+      "panman": "でかいチキン南蛮を、自分で潰して混ぜる仕立てのタルタルで。歯応えとコクで満足感しっかり、味噌汁付き。",
+      "caution": "揚げ物＋タルタルでこってり寄り。さっぱり食べたい日には重いかも。",
+      "recommend": "チキン南蛮定食（タルタルは卵を潰してよく混ぜて）",
+      "tip": "",
+      "panmanVerdict": "合う"
+    },
+    {
+      "id": "kamukura",
+      "name": "どうとんぼり神座",
+      "area": "都心",
+      "genre": "ラーメン",
+      "signature": "おいしいラーメン",
+      "axes": { "bitter": 1, "sour": 1, "roast": 1, "creamy": 1, "firstTime": 4, "picky": 2 },
+      "panman": "白菜たっぷりであっさり甘め。きれいな味だけど、ガツンとコクが欲しい2人には物足りなかった。",
+      "caution": "こってり満足を求める日には軽すぎる。",
+      "recommend": "おいしいラーメン",
+      "tip": "",
+      "panmanVerdict": "微妙"
+    },
+    {
+      "id": "tamura-ginkatsutei",
+      "name": "田むら銀かつ亭",
+      "area": "箱根ほか",
+      "genre": "とんかつ",
+      "signature": "豆腐かつ煮",
+      "axes": { "bitter": 1, "sour": 1, "roast": 2, "creamy": 2, "firstTime": 3, "picky": 3 },
+      "panman": "上品で繊細な豆腐かつ煮。完成度は高いけど、量とガツンを求める2人にはやや物足りず、値段も張る。",
+      "caution": "ガッツリ満足を期待すると肩透かし。",
+      "recommend": "豆腐かつ煮",
+      "tip": "",
+      "panmanVerdict": "微妙"
+    },
+    {
+      "id": "kanda-yabusoba",
+      "name": "神田藪蕎麦",
+      "area": "神田",
+      "genre": "蕎麦",
+      "signature": "せいろ",
+      "axes": { "bitter": 1, "sour": 1, "roast": 1, "creamy": 1, "firstTime": 2, "picky": 4 },
+      "panman": "江戸前の通好み。つゆは濃いがそばは淡白で量も少なめ。わかりやすい満足を求める2人には刺さらなかった。",
+      "caution": "玄人向け。ガッツリ・コク重視には合わない。",
+      "recommend": "せいろ（通の世界）",
+      "tip": "",
+      "panmanVerdict": "合わない"
+    },
+    {
+      "id": "aoba-nakano",
+      "name": "中華そば 青葉",
+      "area": "中野",
+      "genre": "ラーメン",
+      "signature": "中華そば（Wスープ）",
+      "axes": { "bitter": 2, "sour": 1, "roast": 1, "creamy": 1, "firstTime": 3, "picky": 3 },
+      "panman": "魚介と動物系のWスープが個性。煮干しの香りが立つぶん、こってり満足を求める2人には物足りず＆クセが気になった。",
+      "caution": "魚介のクセが苦手なら避ける。",
+      "recommend": "中華そば",
+      "tip": "",
+      "panmanVerdict": "合わない"
+    },
+    {
+      "id": "kyoeido-jimbocho",
+      "name": "共栄堂",
+      "area": "神保町",
+      "genre": "欧風カレー",
+      "signature": "スマトラカレー",
+      "axes": { "bitter": 5, "sour": 1, "roast": 4, "creamy": 2, "firstTime": 2, "picky": 5 },
+      "panman": "深い苦味とローストで攻める唯一無二の一皿。ただ2人には“不味すぎて行きたくない”レベルで全く合わなかった。苦味・クセが大の苦手な人は要注意。",
+      "caution": "苦味・ロースト・クセが極端。甘い欧風カレーを期待すると完全に裏切られる。",
+      "recommend": "—（2人には非推奨）",
+      "tip": "",
+      "panmanVerdict": "合わない"
+    }
+  ]
+}
