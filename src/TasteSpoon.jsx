@@ -42,6 +42,7 @@ const AXES = [
   { key: "creamy", label: "クリーミーさ" },
   { key: "firstTime", label: "初見適性" },
   { key: "picky", label: "人を選ぶ度" },
+  { key: "volume", label: "満足感" },
 ];
 
 const SAMPLE =
@@ -50,7 +51,7 @@ const SAMPLE =
 // デモ用：共栄堂サンプルの「想定」分解結果
 const SAMPLE_TASTE = {
   dish: "スマトラカレー",
-  bitter: 4, sour: 0, roast: 5, creamy: 3, firstTime: 1, picky: 5,
+  bitter: 4, sour: 0, roast: 5, creamy: 3, firstTime: 1, picky: 5, volume: 3,
   comment: "深煎りを突き詰めた焦がし感が主役。刺さる人にはとことん刺さる、人を選ぶ一杯。",
 };
 
@@ -98,6 +99,7 @@ const PROFILE_AXES = [
   { key: "creamy", label: "クリーミーさ" },
   { key: "firstTime", label: "とっつきやすさ" },
   { key: "picky", label: "クセの強さ" },
+  { key: "volume", label: "満足感・ボリューム" },
 ];
 
 // 簡易ルールベース分解（公開デモ用フォールバック）
@@ -105,7 +107,7 @@ function ruleBasedAnalyze(text) {
   const t = text || "";
   const hit = (kws) => kws.some((k) => t.includes(k));
   const clamp = (n) => Math.max(0, Math.min(5, n));
-  let bitter = 1, sour = 1, roast = 1, creamy = 1, firstTime = 3, picky = 2;
+  let bitter = 1, sour = 1, roast = 1, creamy = 1, firstTime = 3, picky = 2, volume = 3;
   if (hit(["苦", "ビター", "深煎り"])) bitter += 3;
   if (hit(["酸", "サワー", "レモン", "ヨーグルト"])) sour += 3;
   if (hit(["酸味はほとんどない", "酸味は少ない", "酸味少なめ"])) sour = 0;
@@ -113,10 +115,12 @@ function ruleBasedAnalyze(text) {
   if (hit(["クリーム", "まろやか", "コク", "バター"])) creamy += 3;
   if (hit(["人を選ぶ", "ダメな人はダメ", "独特", "クセ"])) { picky += 3; firstTime -= 2; }
   if (hit(["初見", "万人受け", "誰でも"])) firstTime += 1;
+  if (hit(["ボリューム", "がっつり", "ガッツリ", "大盛", "食べ応え", "満腹", "デカ", "満足"])) volume += 2;
+  if (hit(["量少なめ", "小ぶり", "あっさり", "繊細", "淡白", "物足り", "少量"])) volume -= 2;
   return {
     dish: hit(["カレー"]) ? "このカレー" : "この料理",
     bitter: clamp(bitter), sour: clamp(sour), roast: clamp(roast),
-    creamy: clamp(creamy), firstTime: clamp(firstTime), picky: clamp(picky),
+    creamy: clamp(creamy), firstTime: clamp(firstTime), picky: clamp(picky), volume: clamp(volume),
     comment: hit(["人を選ぶ", "独特", "ダメな人はダメ"])
       ? "刺さる人にはとことん刺さる、人を選ぶ系。期待値を合わせて行こう。"
       : "クセは控えめ、初見でも入りやすそうな味わい。",
@@ -125,12 +129,12 @@ function ruleBasedAnalyze(text) {
 
 async function analyzeTaste(reviewText) {
   try {
-    const prompt = `あなたは料理の味を「味覚特徴量」に分解する専門家です。以下のレビュー/店の説明文を読み、味を6つの軸でそれぞれ0〜5の整数で評価してください。
-軸: bitter(苦味), sour(酸味), roast(ロースト感), creamy(クリーミーさ), firstTime(初見適性 5=誰でも食べやすい), picky(人を選ぶ度 5=非常に人を選ぶ)
+    const prompt = `あなたは料理の味を「味覚特徴量」に分解する専門家です。以下のレビュー/店の説明文を読み、味を7つの軸でそれぞれ0〜5の整数で評価してください。
+軸: bitter(苦味), sour(酸味), roast(ロースト感), creamy(クリーミーさ), firstTime(初見適性 5=誰でも食べやすい), picky(人を選ぶ度 5=非常に人を選ぶ), volume(満足感・ボリューム 5=ガッツリ満腹/0=量少なめ・物足りない)
 さらに dish(料理名や対象を短く) と comment(正直パンマンとしての一言コメント30〜60字、付度なし悪意なし)。
 レビュー: """${reviewText}"""
 必ず以下のJSON形式のみで返答。前置き・コードフェンス不要:
-{"dish":"...","bitter":0,"sour":0,"roast":0,"creamy":0,"firstTime":0,"picky":0,"comment":"..."}`;
+{"dish":"...","bitter":0,"sour":0,"roast":0,"creamy":0,"firstTime":0,"picky":0,"volume":0,"comment":"..."}`;
 
     const res = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
@@ -151,7 +155,7 @@ async function analyzeTaste(reviewText) {
 }
 
 function calcMatch(taste, profile) {
-  const weights = { bitter: 1, sour: 1, roast: 1, creamy: 0.8, firstTime: 1, picky: 1.2 };
+  const weights = { bitter: 1, sour: 1, roast: 1, creamy: 0.8, firstTime: 1, picky: 1.2, volume: 1.5 };
   let totalW = 0, penalty = 0;
   for (const k of Object.keys(weights)) {
     const w = weights[k];
@@ -259,6 +263,10 @@ const AXIS_PHRASE = {
   picky: {
     hi: { good: "人を選ぶ尖りを、むしろ楽しめるタイプ向け。", bad: "クセが強いので、無難狙いにはきついかも。" },
     lo: { good: "万人受けする食べやすさ。", bad: "尖りは控えめ。冒険したい日には優等生すぎるかも。" },
+  },
+  volume: {
+    hi: { good: "ボリューム・満足感たっぷりで、しっかり満たされる。", bad: "量多めなので、軽く済ませたい日には重いかも。" },
+    lo: { good: "軽やかで、サッと食べたい時にちょうどいい。", bad: "量・満足感は控えめ。がっつり食べたい人には物足りないかも。" },
   },
 };
 
