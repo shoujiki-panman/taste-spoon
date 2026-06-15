@@ -166,22 +166,23 @@ function calcMatch(taste, profile) {
   return Math.max(0, Math.min(100, Math.round((1 - penalty / totalW) * 100)));
 }
 
+// 7軸スケールへ校正(2026-06)。旧6軸の 75/55/40 から 80/70/56 へ。
 function matchVerdict(score) {
-  if (score >= 75) return { label: "ばっちり合うはず", tone: "#2f9e44" };
-  if (score >= 55) return { label: "わりと好きかも", tone: "#74b816" };
-  if (score >= 40) return { label: "ちょっと冒険", tone: "#f08c00" };
+  if (score >= 80) return { label: "ばっちり合うはず", tone: "#2f9e44" };
+  if (score >= 70) return { label: "わりと好きかも", tone: "#74b816" };
+  if (score >= 56) return { label: "ちょっと冒険", tone: "#f08c00" };
   return { label: "覚悟して行こう", tone: "#e8590c" };
 }
 
-// 3段階判定。閾値(55 / 40)は matchVerdict の境界(75 / 55 / 40)の部分集合。
+// 3段階判定。閾値(70 / 56)は matchVerdict の境界(80 / 70 / 56)の部分集合。
 // → matchVerdict の各バンドは必ずどれか 1 つの tier に丸ごと収まるので、
 //   特大の3段階判定とサブ表示の matchVerdict ラベルは構造的に矛盾しない。
-//     合う    = 「ばっちり合うはず」(>=75) + 「わりと好きかも」(>=55)
-//     微妙    = 「ちょっと冒険」(>=40)
-//     合わない = 「覚悟して行こう」(<40)
+//     合う    = 「ばっちり合うはず」(>=80) + 「わりと好きかも」(>=70)
+//     微妙    = 「ちょっと冒険」(>=56)
+//     合わない = 「覚悟して行こう」(<56)
 function verdictTier(score) {
-  if (score >= 55) return { tier: "合う", state: "good", tone: "#2f9e44" };
-  if (score >= 40) return { tier: "微妙", state: "hmm", tone: "#f08c00" };
+  if (score >= 70) return { tier: "合う", state: "good", tone: "#2f9e44" };
+  if (score >= 56) return { tier: "微妙", state: "hmm", tone: "#f08c00" };
   return { tier: "合わない", state: "bad", tone: "#e8590c" };
 }
 
