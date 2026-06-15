@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "note": "Taste Spoon の種データ。axes は6軸(bitter/sour/roast/creamy/firstTime/picky, 0-5)で calcMatch にそのまま使える。profile=キャリブレーション用の『自分たち』。panmanVerdict=正解(味の判定)。spice(辛さ)は別フィルタで本検証の対象外。",
+  "note": "Taste Spoon の種データ。axes は6軸(bitter/sour/roast/creamy/firstTime/picky, 0-5)で calcMatch にそのまま使える。profile=キャリブレーション用の『自分たち』。panmanVerdict=正解(味の判定)。spice(辛さ,0-5)は味の判定とは別のフィルタ(2人=cap1/自分=cap2)。",
   "limitation": "【既知の限界 / 検証結果】現行6軸＋calcMatch据置では、味の判定の一致は最大でも 5〜6/10 にとどまる。原因は、負側の店(物足りない/通好み/量少なめ)を分ける本当の要因『満足感・ボリューム(こってり〜あっさり)』が6軸に無いため。例: からやま(合う)と神座(微妙)は6軸ベクトルがほぼ同一で、満足感だけが違う。10/10 は sour=5/roast=5 のような嗜好と矛盾する過学習でしか得られず、ブランド『正直』に反するため不採用。profile は意味重視(B)を採用。根本解決は『満足感/volume』軸の追加(別タスク)。",
   "profile": {
     "label": "自分たち",
@@ -41,7 +41,8 @@
       "caution": "甘いのが主役。しょっぱい朝食気分だと方向違い。席が小さく2人だと窮屈。",
       "recommend": "フレンチトースト＋コーヒーセット",
       "tip": "",
-      "panmanVerdict": "合う"
+      "panmanVerdict": "合う",
+      "spice": 0
     },
     {
       "id": "newtorigin-ginza",
@@ -62,7 +63,8 @@
       "caution": "値段はやや張る。ただ量で納得できるタイプ。",
       "recommend": "鳥山菜の釜飯（おこげ多めで頼める）",
       "tip": "実は持ち帰りもできる",
-      "panmanVerdict": "合う"
+      "panmanVerdict": "合う",
+      "spice": 0
     },
     {
       "id": "rasmi-kawasaki",
@@ -83,7 +85,8 @@
       "caution": "ガーリックライスは重め＆味薄め。塩で調整すると化ける。",
       "recommend": "ナン＋バターチキン（甘口）／ガーリックライス（塩がけ）",
       "tip": "待っているとラッシーをサービスしてくれることがある",
-      "panmanVerdict": "合う"
+      "panmanVerdict": "合う",
+      "spice": 1
     },
     {
       "id": "karayama-kawasaki",
@@ -104,7 +107,8 @@
       "caution": "ボリューム＆揚げ物で重め。軽く済ませたい日には不向き。",
       "recommend": "唐揚げ弁当（極ダレをかけて）",
       "tip": "毎回割引クーポンがもらえる",
-      "panmanVerdict": "合う"
+      "panmanVerdict": "合う",
+      "spice": 0
     },
     {
       "id": "hioki-shinagawa",
@@ -125,7 +129,8 @@
       "caution": "揚げ物＋タルタルでこってり寄り。さっぱり食べたい日には重いかも。",
       "recommend": "チキン南蛮定食（タルタルは卵を潰してよく混ぜて）",
       "tip": "",
-      "panmanVerdict": "合う"
+      "panmanVerdict": "合う",
+      "spice": 0
     },
     {
       "id": "kamukura",
@@ -146,7 +151,8 @@
       "caution": "こってり満足を求める日には軽すぎる。",
       "recommend": "おいしいラーメン",
       "tip": "",
-      "panmanVerdict": "微妙"
+      "panmanVerdict": "微妙",
+      "spice": 0
     },
     {
       "id": "tamura-ginkatsutei",
@@ -167,7 +173,8 @@
       "caution": "ガッツリ満足を期待すると肩透かし。",
       "recommend": "豆腐かつ煮",
       "tip": "",
-      "panmanVerdict": "微妙"
+      "panmanVerdict": "微妙",
+      "spice": 0
     },
     {
       "id": "kanda-yabusoba",
@@ -188,7 +195,8 @@
       "caution": "玄人向け。ガッツリ・コク重視には合わない。",
       "recommend": "せいろ（通の世界）",
       "tip": "",
-      "panmanVerdict": "合わない"
+      "panmanVerdict": "合わない",
+      "spice": 0
     },
     {
       "id": "aoba-nakano",
@@ -209,7 +217,8 @@
       "caution": "魚介のクセが苦手なら避ける。",
       "recommend": "中華そば",
       "tip": "",
-      "panmanVerdict": "合わない"
+      "panmanVerdict": "合わない",
+      "spice": 0
     },
     {
       "id": "kyoeido-jimbocho",
@@ -230,7 +239,8 @@
       "caution": "苦味・ロースト・クセが極端。甘い欧風カレーを期待すると完全に裏切られる。",
       "recommend": "—（2人には非推奨）",
       "tip": "",
-      "panmanVerdict": "合わない"
+      "panmanVerdict": "合わない",
+      "spice": 3
     }
   ]
 }

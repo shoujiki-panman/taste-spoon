@@ -4,6 +4,12 @@ import {
   ResponsiveContainer,
 } from "recharts";
 import PanmanAnim from "./PanmanAnim.jsx";
+import storesData from "./data/stores.json";
+
+const STORES = storesData.stores;
+const SELF_PROFILE = storesData.profile.axes; // 『自分たち』をデフォルト/プリセットに
+const SPICE_CAP = { couple: 1, solo: 2 }; // 2人/自分だけ の辛さ上限
+const AREAS = ["すべて", ...Array.from(new Set(STORES.map((s) => s.area)))];
 
 // ─────────────────────────────────────────────────────────────
 // Taste Spoon ― 味の特徴を一口で
@@ -58,15 +64,15 @@ const SAMPLE_TASTE = {
 // 初回・未学習はニュートラル(中間値)。診断もスライダーも無しで即判定できる。
 const NEUTRAL_PROFILE = Object.fromEntries(AXES.map((a) => [a.key, 2.5]));
 
-const STORE_KEY = "tasteSpoon.profile.v1";
+const STORE_KEY = "tasteSpoon.profile.v2"; // v2: デフォルトを『自分たち』に
 const LEARN_RATE = 0.2; // 1回の学習で taste へ寄せる割合
 const LEARN_THRESHOLD = 3; // この回数まで「学習中」表示
 
 const clamp5 = (n) => Math.max(0, Math.min(5, n));
 
-// localStorage から { profile, learnCount } を復元（壊れていればニュートラル）
+// localStorage から { profile, learnCount } を復元（無ければ『自分たち』プリセット）
 function loadStore() {
-  const fallback = { profile: { ...NEUTRAL_PROFILE }, learnCount: 0 };
+  const fallback = { profile: { ...SELF_PROFILE }, learnCount: 0 };
   try {
     const raw = localStorage.getItem(STORE_KEY);
     if (!raw) return fallback;
@@ -74,7 +80,7 @@ function loadStore() {
     const profile = {};
     for (const a of AXES) {
       const v = p?.profile?.[a.key];
-      profile[a.key] = typeof v === "number" ? clamp5(v) : 2.5;
+      profile[a.key] = typeof v === "number" ? clamp5(v) : (SELF_PROFILE[a.key] ?? 2.5);
     }
     return { profile, learnCount: Number(p?.learnCount) || 0 };
   } catch {
@@ -325,10 +331,83 @@ function loadTagMap() {
   }
 }
 
+// 判定カード（正直パンマン＋2行理由＋スコア）。単発判定とピッカーの両方で再利用。
+// overrideLines を渡すと store.panman/caution をそのまま見立てに使う。
+function VerdictCard({ taste, profile, intents, overrideLines, recommend, tip, loading = false, animKey = "x" }) {
+  const base = calcMatch(taste, profile);
+  const shownMatch = intentAdjustedMatch(base, taste, intents);
+  const verdict = matchVerdict(shownMatch);
+  const tier = verdictTier(shownMatch);
+  const remark = intentRemark(taste, intents);
+  const lines = overrideLines ?? buildReasonLines(taste, profile, tier.state);
+  const typed = useTypewriter(lines.line1, animKey);
+  const bubbleText = loading ? "ふむふむ…正直に味見中" : typed;
+  const typing = !loading && typed.length < lines.line1.length;
+
+  return (
+    <div style={{ ...S.verdictCard, borderColor: tier.tone }}>
+      <div style={S.tierRow}>
+        <span key={loading ? "loading" : `${tier.state}-${animKey}`} className="panman-pop" style={S.tierImgWrap}>
+          <PanmanAnim
+            state={loading ? "loading" : tier.state}
+            size={112}
+            alt={loading ? "正直パンマンが調査中" : `正直パンマン（${tier.tier}）`}
+          />
+        </span>
+        <span style={{ ...S.tierLabel, color: tier.tone }}>{tier.tier}</span>
+      </div>
+
+      <div
+        key={loading ? "bubble-loading" : `bubble-${tier.state}-${animKey}`}
+        className="panman-bubble-pop"
+        style={S.speechBubble}
+      >
+        <span style={S.bubbleTailOuter} aria-hidden="true" />
+        <span style={S.bubbleTailInner} aria-hidden="true" />
+        <div style={S.reasonHead}>
+          <span style={S.reasonFace}>🍞</span>
+          <span style={S.panmanName}>正直パンマンの見立て</span>
+        </div>
+        <p style={S.reasonText}>
+          {bubbleText}
+          {typing && <span className="panman-caret" style={S.caret}>▍</span>}
+        </p>
+        {!loading && !typing && lines.line2 && <p style={S.reasonText2}>{lines.line2}</p>}
+        {!loading && !typing && remark && <p style={S.reasonRemark}>{remark}</p>}
+      </div>
+
+      <div style={S.dishLine}>
+        <span style={S.dishName}>{taste.dish}</span>
+        <span style={S.subVerdict}>（{verdict.label}）</span>
+      </div>
+
+      <div style={S.scoreWrap}>
+        <div style={S.scoreAux}>
+          <span style={S.scoreAuxLabel}>あなたとの相性</span>
+          <div style={S.scoreAuxRight}>
+            <div style={S.barTrack}>
+              <div style={{ ...S.barFill, width: `${shownMatch}%`, background: tier.tone }} />
+            </div>
+            <span style={{ ...S.scoreAuxNum, color: tier.tone }}>{shownMatch}%</span>
+          </div>
+        </div>
+        <p style={S.scoreCaption}>あなたの好みにどれだけ近いか</p>
+      </div>
+
+      {(recommend || tip) && (
+        <div style={S.metaBox}>
+          {recommend && <p style={S.metaLine}><b style={S.metaKey}>おすすめ</b>{recommend}</p>}
+          {tip && <p style={S.metaLine}><b style={S.metaKey}>ヒント</b>{tip}</p>}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function TasteSpoon() {
   const [text, setText] = useState(SAMPLE);
   const [store, setStore] = useState(loadStore);
-  const { profile, learnCount } = store;
+  const { profile } = store;
   const setProfile = (next) =>
     setStore((s) => ({ ...s, profile: typeof next === "function" ? next(s.profile) : next }));
   const [result, setResult] = useState(() => ({
@@ -341,6 +420,9 @@ export default function TasteSpoon() {
   const [feedback, setFeedback] = useState(null); // null | 'fit' | 'meh' | 'no'
   const [intents, setIntents] = useState(() => new Set()); // 今日の気分（任意・複数）
   const [tagMap, setTagMap] = useState(loadTagMap); // 食後タグ（料理名キー）
+  const [picked, setPicked] = useState(false); // 「今日どこ行く?」押下後に結果表示
+  const [area, setArea] = useState("すべて"); // エリア単選
+  const [party, setParty] = useState("couple"); // couple=2人 / solo=自分だけ
   const resultRef = useRef(null);
 
   const dishKey = result?.taste?.dish ?? "";
@@ -420,17 +502,18 @@ export default function TasteSpoon() {
   }, [profile]);
 
   const radarData = result ? AXES.map((a) => ({ axis: a.label, value: result.taste[a.key] ?? 0 })) : [];
-  // calcMatch の生値(result.match)は保持し、表示は気分補正後の値で行う
-  const shownMatch = result ? intentAdjustedMatch(result.match, result.taste, intents) : 0;
-  const verdict = result ? matchVerdict(shownMatch) : null;
-  const tier = result ? verdictTier(shownMatch) : null;
-  const remark = result ? intentRemark(result.taste, intents) : null;
 
-  // 2行見立て（1行目=合う理由 / 2行目=注意点。合わない時は なぜ/でもこういう人には）
-  const lines = result ? buildReasonLines(result.taste, profile, tier.state) : { line1: "", line2: "" };
-  const typed = useTypewriter(lines.line1, runSeq);
-  const bubbleText = loading ? "ふむふむ…正直に味見中" : typed;
-  const typing = !loading && typed.length < lines.line1.length;
+  // 「今日どこ行く?」のピック結果（エリア単選＋辛さcap＋気分補正）
+  const cap = SPICE_CAP[party];
+  const areaStores = area === "すべて" ? STORES : STORES.filter((s) => s.area === area);
+  const scored = areaStores.map((s) => {
+    const shown = intentAdjustedMatch(calcMatch(s.axes, profile), s.axes, intents);
+    return { s, shown, tier: verdictTier(shown).tier, over: (s.spice ?? 0) > cap };
+  });
+  const spicy = scored.filter((x) => x.over);
+  const safe = scored.filter((x) => !x.over);
+  const fitList = safe.filter((x) => x.tier === "合う").sort((a, b) => b.shown - a.shown).slice(0, 3);
+  const avoidList = safe.filter((x) => x.tier !== "合う").sort((a, b) => b.shown - a.shown);
 
   return (
     <div style={S.page}>
@@ -454,180 +537,181 @@ export default function TasteSpoon() {
         <PanmanAnim state="idle" size={96} />
       </div>
 
-      <section style={S.card}>
-        <label style={S.label}>口コミ・メニュー説明を貼り付け</label>
-        <textarea
-          style={S.textarea}
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          rows={5}
-          placeholder="お店の口コミやメニューの説明を貼ってね（例: 食べログのレビュー、お店の紹介文 など）"
-        />
+      {/* メイン: 今日どこ行く? */}
+      <button style={S.bigBtn} onClick={() => setPicked(true)}>
+        今日どこ行く？🥄
+      </button>
 
-        <div style={S.moodLabel}>今日はどんな気分？<span style={S.moodHint}>（任意・複数OK）</span></div>
-        <div style={S.chipWrap}>
-          {INTENTS.map((it) => {
-            const on = intents.has(it.id);
-            return (
-              <button
-                key={it.id}
-                type="button"
-                aria-pressed={on}
-                onClick={() => toggleIntent(it.id)}
-                style={{ ...S.chip, ...(on ? S.chipOn : null) }}
-              >
-                {on ? "✓ " : ""}{it.label}
-              </button>
-            );
-          })}
-        </div>
+      {picked && (
+        <>
+          {/* フィルタ */}
+          <section style={S.card}>
+            <div style={S.filterLabel}>エリア</div>
+            <div style={S.chipWrap}>
+              {AREAS.map((a) => (
+                <button key={a} type="button" aria-pressed={area === a}
+                  onClick={() => setArea(a)} style={{ ...S.chip, ...(area === a ? S.chipOn : null) }}>
+                  {area === a ? "✓ " : ""}{a}
+                </button>
+              ))}
+            </div>
 
-        <button style={{ ...S.btn, opacity: loading ? 0.6 : 1 }} onClick={run} disabled={loading}>
-          {loading ? "正直パンマンが味見中…" : "味を分解する"}
-        </button>
-        {err && <p style={S.err}>{err}</p>}
-      </section>
+            <div style={S.filterLabel}>今日は</div>
+            <div style={S.partyRow}>
+              {[["couple", "2人"], ["solo", "自分だけ"]].map(([id, label]) => (
+                <button key={id} type="button" aria-pressed={party === id}
+                  onClick={() => setParty(id)} style={{ ...S.partyBtn, ...(party === id ? S.partyBtnOn : null) }}>
+                  {label}
+                </button>
+              ))}
+            </div>
 
+            <div style={S.filterLabel}>気分 <span style={S.moodHint}>（任意・複数OK）</span></div>
+            <div style={S.chipWrap}>
+              {INTENTS.map((it) => {
+                const on = intents.has(it.id);
+                return (
+                  <button key={it.id} type="button" aria-pressed={on}
+                    onClick={() => toggleIntent(it.id)} style={{ ...S.chip, ...(on ? S.chipOn : null) }}>
+                    {on ? "✓ " : ""}{it.label}
+                  </button>
+                );
+              })}
+            </div>
+          </section>
+
+          {/* 合う 上位3 */}
+          <h2 style={S.sectionTitle}>🍞 今日のおすすめ</h2>
+          {fitList.length === 0 ? (
+            <p style={S.emptyNote}>このエリア・条件だと「合う」店は無し。正直、別エリアか条件をゆるめてみて。</p>
+          ) : (
+            fitList.map(({ s }) => (
+              <VerdictCard key={s.id} taste={{ ...s.axes, dish: s.name }} profile={profile}
+                intents={intents} overrideLines={{ line1: s.panman, line2: s.caution }}
+                recommend={s.recommend} tip={s.tip} animKey={s.id} />
+            ))
+          )}
+
+          {/* 別枠: 正直に避けたい店 */}
+          {avoidList.length > 0 && (
+            <>
+              <h2 style={{ ...S.sectionTitle, color: "#b06a2c" }}>正直、今日は微妙かも</h2>
+              <p style={S.sectionSub}>正直パンマンが「微妙／合わない」と思った店。避けたい人向けに正直に。</p>
+              {avoidList.map(({ s }) => (
+                <VerdictCard key={s.id} taste={{ ...s.axes, dish: s.name }} profile={profile}
+                  intents={intents} overrideLines={{ line1: s.panman, line2: s.caution }}
+                  recommend={s.recommend} tip={s.tip} animKey={s.id} />
+              ))}
+            </>
+          )}
+
+          {/* 別枠: 辛さ注意 */}
+          {spicy.length > 0 && (
+            <div style={S.spicyBox}>
+              <p style={S.spicyTitle}>⚠ 辛さ注意（{party === "couple" ? "2人" : "自分"}の上限を超え）</p>
+              {spicy.map(({ s }) => (
+                <p key={s.id} style={S.spicyLine}>🌶 <b>{s.name}</b>（辛さ{s.spice}）— {s.signature}</p>
+              ))}
+            </div>
+          )}
+        </>
+      )}
+
+      {/* 裏ツール: お店を登録する（口コミから判定）*/}
       <details className="tune" style={S.tuneDetails}>
-        <summary style={S.tuneSummary}>⚙️ もっと精度を上げる・詳しく調整（任意）</summary>
+        <summary style={S.tuneSummary}>＋ お店を登録する（口コミから判定）</summary>
+        <div style={S.tuneBody}>
+          <label style={S.label}>口コミ・メニュー説明を貼り付け</label>
+          <textarea style={S.textarea} value={text} onChange={(e) => setText(e.target.value)} rows={5}
+            placeholder="お店の口コミやメニューの説明を貼ってね（例: 食べログのレビュー、お店の紹介文 など）" />
+          <div style={S.moodLabel}>今日はどんな気分？<span style={S.moodHint}>（任意・複数OK）</span></div>
+          <div style={S.chipWrap}>
+            {INTENTS.map((it) => {
+              const on = intents.has(it.id);
+              return (
+                <button key={it.id} type="button" aria-pressed={on}
+                  onClick={() => toggleIntent(it.id)} style={{ ...S.chip, ...(on ? S.chipOn : null) }}>
+                  {on ? "✓ " : ""}{it.label}
+                </button>
+              );
+            })}
+          </div>
+          <button style={{ ...S.btn, opacity: loading ? 0.6 : 1 }} onClick={run} disabled={loading}>
+            {loading ? "正直パンマンが味見中…" : "味を分解する"}
+          </button>
+          {err && <p style={S.err}>{err}</p>}
+
+          {result && (
+            <section style={{ ...S.resultCard, marginTop: 16 }} ref={resultRef}>
+              <VerdictCard taste={result.taste} profile={profile} intents={intents}
+                loading={loading} animKey={String(runSeq)} />
+
+              {!loading && (
+                <div style={S.feedbackBox}>
+                  {feedback ? (
+                    <p style={S.feedbackThanks}>🍞 正直パンマンが覚えたよ。次の見立てに反映するね。</p>
+                  ) : (
+                    <>
+                      <p style={S.feedbackQ}>実はどうだった？</p>
+                      <div style={S.feedbackRow}>
+                        <button style={{ ...S.fbBtn, ...S.fbFit }} onClick={() => giveFeedback("fit")}>合った</button>
+                        <button style={{ ...S.fbBtn, ...S.fbMeh }} onClick={() => giveFeedback("meh")}>微妙</button>
+                        <button style={{ ...S.fbBtn, ...S.fbNo }} onClick={() => giveFeedback("no")}>合わなかった</button>
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
+
+              {!loading && (
+                <div style={S.mealBox}>
+                  <p style={S.mealTitle}>食べた後は？<span style={S.moodHint}>（タップで記録）</span></p>
+                  <div style={S.chipWrap}>
+                    {MEAL_TAGS.map((t) => {
+                      const on = dishTags.has(t);
+                      return (
+                        <button key={t} type="button" aria-pressed={on}
+                          onClick={() => toggleTag(t)} style={{ ...S.chip, ...(on ? S.chipOn : null) }}>
+                          {on ? "✓ " : ""}{t}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              <div style={S.chartWrap}>
+                <ResponsiveContainer width="100%" height={300}>
+                  <RadarChart data={radarData} outerRadius="72%">
+                    <PolarGrid stroke="#d8c9b0" />
+                    <PolarAngleAxis dataKey="axis" tick={{ fill: "#5a4a35", fontSize: 13, fontWeight: 600 }} />
+                    <PolarRadiusAxis domain={[0, 5]} tick={false} axisLine={false} />
+                    <Radar dataKey="value" stroke="#c0392b" fill="#e74c3c" fillOpacity={0.45} />
+                  </RadarChart>
+                </ResponsiveContainer>
+              </div>
+            </section>
+          )}
+        </div>
+      </details>
+
+      {/* 味覚プロフィール詳細調整 */}
+      <details className="tune" style={S.tuneDetails}>
+        <summary style={S.tuneSummary}>⚙️ 味覚プロフィールを詳しく調整（任意）</summary>
         <div style={S.tuneBody}>
           <p style={S.hint}>普段の好みに合わせてスライダーを動かすと、相性がより正確になります（触らなくてもOK）。</p>
           {PROFILE_AXES.map((a) => (
             <div key={a.key} style={S.sliderRow}>
               <span style={S.sliderLabel}>{a.label}</span>
-              <input
-                type="range" min={0} max={5} step={1}
+              <input type="range" min={0} max={5} step={1}
                 value={Math.round(profile[a.key])}
                 onChange={(e) => setProfile({ ...profile, [a.key]: Number(e.target.value) })}
-                style={S.slider}
-              />
+                style={S.slider} />
               <span style={S.sliderVal}>{profile[a.key].toFixed(1)}</span>
             </div>
           ))}
         </div>
       </details>
-
-      {result && (
-        <section style={S.resultCard} ref={resultRef}>
-          {/* ── 判定カード（主役: 3段階判定 + 正直パンマンの理由）── */}
-          <div style={{ ...S.verdictCard, borderColor: tier.tone }}>
-            <div style={S.tierRow}>
-              <span
-                key={loading ? "loading" : `${tier.state}-${runSeq}`}
-                className="panman-pop"
-                style={S.tierImgWrap}
-              >
-                <PanmanAnim
-                  state={loading ? "loading" : tier.state}
-                  size={112}
-                  alt={loading ? "正直パンマンが調査中" : `正直パンマン（${tier.tier}）`}
-                />
-              </span>
-              <span style={{ ...S.tierLabel, color: tier.tone }}>{tier.tier}</span>
-            </div>
-
-            {/* 正直パンマンの吹き出し（しっぽで真上のパンマンを指す）*/}
-            <div
-              key={loading ? "bubble-loading" : `bubble-${tier.state}-${runSeq}`}
-              className="panman-bubble-pop"
-              style={S.speechBubble}
-            >
-              <span style={S.bubbleTailOuter} aria-hidden="true" />
-              <span style={S.bubbleTailInner} aria-hidden="true" />
-              <div style={S.reasonHead}>
-                <span style={S.reasonFace}>🍞</span>
-                <span style={S.panmanName}>正直パンマンの見立て</span>
-              </div>
-              <p style={S.reasonText}>
-                {bubbleText}
-                {typing && <span className="panman-caret" style={S.caret}>▍</span>}
-              </p>
-              {!loading && !typing && lines.line2 && (
-                <p style={S.reasonText2}>{lines.line2}</p>
-              )}
-              {!loading && !typing && remark && (
-                <p style={S.reasonRemark}>{remark}</p>
-              )}
-            </div>
-
-            <div style={S.dishLine}>
-              <span style={S.dishName}>{result.taste.dish}</span>
-              <span style={S.subVerdict}>（{verdict.label}）</span>
-            </div>
-
-            {/* スコアは補助 */}
-            <div style={S.scoreWrap}>
-              <div style={S.scoreAux}>
-                <span style={S.scoreAuxLabel}>あなたとの相性</span>
-                <div style={S.scoreAuxRight}>
-                  <div style={S.barTrack}>
-                    <div style={{ ...S.barFill, width: `${shownMatch}%`, background: tier.tone }} />
-                  </div>
-                  <span style={{ ...S.scoreAuxNum, color: tier.tone }}>{shownMatch}%</span>
-                </div>
-              </div>
-              <p style={S.scoreCaption}>あなたの好みにどれだけ近いか</p>
-            </div>
-
-            {learnCount < LEARN_THRESHOLD && (
-              <p style={S.learnNote}>※まだ学習中。一般的な“人を選ぶ度”ベースの見立てです。</p>
-            )}
-          </div>
-
-          {/* 判定後の1タップ学習（任意・押さなくてOK）*/}
-          {!loading && (
-            <div style={S.feedbackBox}>
-              {feedback ? (
-                <p style={S.feedbackThanks}>🍞 正直パンマンが覚えたよ。次の見立てに反映するね。</p>
-              ) : (
-                <>
-                  <p style={S.feedbackQ}>実はどうだった？</p>
-                  <div style={S.feedbackRow}>
-                    <button style={{ ...S.fbBtn, ...S.fbFit }} onClick={() => giveFeedback("fit")}>合った</button>
-                    <button style={{ ...S.fbBtn, ...S.fbMeh }} onClick={() => giveFeedback("meh")}>微妙</button>
-                    <button style={{ ...S.fbBtn, ...S.fbNo }} onClick={() => giveFeedback("no")}>合わなかった</button>
-                  </div>
-                </>
-              )}
-            </div>
-          )}
-
-          {/* 食後フィードバック（タグ・複数選択・localStorage保存）*/}
-          {!loading && (
-            <div style={S.mealBox}>
-              <p style={S.mealTitle}>食べた後は？<span style={S.moodHint}>（タップで記録）</span></p>
-              <div style={S.chipWrap}>
-                {MEAL_TAGS.map((t) => {
-                  const on = dishTags.has(t);
-                  return (
-                    <button
-                      key={t}
-                      type="button"
-                      aria-pressed={on}
-                      onClick={() => toggleTag(t)}
-                      style={{ ...S.chip, ...(on ? S.chipOn : null) }}
-                    >
-                      {on ? "✓ " : ""}{t}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-
-          {/* レーダー（Step 4 で詳細トグルへ降格予定。今は下にそのまま表示）*/}
-          <div style={S.chartWrap}>
-            <ResponsiveContainer width="100%" height={300}>
-              <RadarChart data={radarData} outerRadius="72%">
-                <PolarGrid stroke="#d8c9b0" />
-                <PolarAngleAxis dataKey="axis" tick={{ fill: "#5a4a35", fontSize: 13, fontWeight: 600 }} />
-                <PolarRadiusAxis domain={[0, 5]} tick={false} axisLine={false} />
-                <Radar dataKey="value" stroke="#c0392b" fill="#e74c3c" fillOpacity={0.45} />
-              </RadarChart>
-            </ResponsiveContainer>
-          </div>
-        </section>
-      )}
 
       <footer style={S.footer}>
         レビューを見る時代から、<b>相性を試食する時代</b>へ。<br />
@@ -655,6 +739,20 @@ const S = {
   chip: { minHeight: 44, padding: "0 16px", borderRadius: 999, border: "2px solid #e3d2b4", background: "#fffefb", color: "#7a5c34", fontFamily: "inherit", fontSize: 14, fontWeight: 700, cursor: "pointer", lineHeight: 1 },
   chipOn: { borderColor: "#c0392b", background: "#c0392b", color: "#fff", boxShadow: "0 2px 8px rgba(192,57,43,.22)" },
   btn: { marginTop: 14, width: "100%", padding: "13px 0", border: "none", borderRadius: 12, background: "#c0392b", color: "#fff", fontSize: 15.5, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", letterSpacing: ".5px" },
+  bigBtn: { width: "100%", minHeight: 60, padding: "16px 0", border: "none", borderRadius: 18, background: "#c0392b", color: "#fff", fontSize: 22, fontWeight: 800, cursor: "pointer", fontFamily: "'Bagel Fat One',sans-serif", letterSpacing: ".5px", boxShadow: "0 6px 18px rgba(192,57,43,.28)", marginBottom: 18 },
+  filterLabel: { fontSize: 13, fontWeight: 700, color: "#7a5c34", margin: "12px 0 8px" },
+  partyRow: { display: "flex", gap: 8 },
+  partyBtn: { flex: 1, minHeight: 44, border: "2px solid #e3d2b4", borderRadius: 12, background: "#fffefb", color: "#7a5c34", fontFamily: "inherit", fontSize: 14.5, fontWeight: 700, cursor: "pointer" },
+  partyBtnOn: { borderColor: "#c0392b", background: "#c0392b", color: "#fff" },
+  sectionTitle: { fontSize: 17, fontWeight: 800, color: "#c0392b", margin: "22px 2px 6px" },
+  sectionSub: { fontSize: 12.5, color: "#a08a6a", margin: "0 2px 10px" },
+  emptyNote: { fontSize: 14, color: "#8a6f4a", background: "#fffdf7", border: "2px dashed #ecdcc0", borderRadius: 14, padding: "16px 14px", textAlign: "center" },
+  spicyBox: { background: "#fff3ef", border: "2px solid #f0c4b0", borderRadius: 14, padding: "12px 14px", margin: "16px 0" },
+  spicyTitle: { margin: "0 0 6px", fontSize: 13.5, fontWeight: 800, color: "#e8590c" },
+  spicyLine: { margin: "2px 0", fontSize: 13.5, color: "#7a5236" },
+  metaBox: { marginTop: 10, paddingTop: 10, borderTop: "1px solid #f0e3cd" },
+  metaLine: { margin: "3px 0", fontSize: 13.5, lineHeight: 1.6, color: "#5a4a35" },
+  metaKey: { display: "inline-block", marginRight: 6, color: "#d9822b", fontWeight: 700 },
   err: { color: "#c0392b", fontSize: 13, marginTop: 8 },
   sliderRow: { display: "flex", alignItems: "center", gap: 10, marginBottom: 10 },
   sliderLabel: { width: 110, fontSize: 13, fontWeight: 600, color: "#6a5236" },
