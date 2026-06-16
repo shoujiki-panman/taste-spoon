@@ -251,6 +251,29 @@
       "tip": "",
       "panmanVerdict": "合わない",
       "spice": 3
+    },
+    {
+      "id": "konpira-chaya-meguro",
+      "name": "手打ちうどん こんぴら茶屋",
+      "area": "目黒",
+      "genre": "うどん",
+      "signature": "牛かれーうどん",
+      "image": "",
+      "axes": {
+        "bitter": 1,
+        "sour": 1,
+        "roast": 1,
+        "creamy": 3,
+        "firstTime": 4,
+        "picky": 2,
+        "volume": 3
+      },
+      "panman": "出汁の効いたコクのある牛かれーうどん。感動系ではないが、通いたくなる安定のうまさ。",
+      "caution": "少し辛めなので辛いのが苦手だときつい。うどんだけだと物足りないことも（ご飯追加が吉）。",
+      "recommend": "牛かれーうどん（足りなければライス追加）",
+      "tip": "現金のみ。店がコンパクトで外待ちになることあり。",
+      "panmanVerdict": "合う",
+      "spice": 2
     }
   ]
 }
