@@ -50,6 +50,50 @@ const AXES = [
   { key: "picky", label: "人を選ぶ度" },
   { key: "volume", label: "満足感" },
 ];
+const AXIS_KEYS = AXES.map((a) => a.key);
+
+// ── 頻度ガード（クールダウン）。calcMatch には一切触れない。来店記録と絞り込みだけ。 ──
+// localStorage: visits:<storeId> = 最終来店日(ISO "YYYY-MM-DD")
+const visitKey = (id) => `visits:${id}`;
+function todayStr() {
+  const d = new Date();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${d.getFullYear()}-${m}-${day}`;
+}
+function daysBetween(fromIso, toIso) {
+  const a = new Date(`${fromIso}T00:00:00`);
+  const b = new Date(`${toIso}T00:00:00`);
+  return Math.round((b - a) / 86400000);
+}
+// クールダウン状態。guarded=cooldownDays あり / blocked=まだ期間内（今日行けない）
+function cooldownStatus(store, visits, today) {
+  const cd = store.cooldownDays;
+  const last = visits[store.id] || null;
+  if (!cd) return { guarded: false, last: null, blocked: false };
+  if (!last) return { guarded: true, last: null, blocked: false, remaining: 0 };
+  const since = daysBetween(last, today);
+  const remaining = cd - since;
+  return { guarded: true, last, since, remaining, blocked: remaining > 0 };
+}
+// axes が近い＝似た満足感。Manhattan 距離。
+function axisDist(a, b) {
+  let d = 0;
+  for (const k of AXIS_KEYS) d += Math.abs((a[k] ?? 0) - (b[k] ?? 0));
+  return d;
+}
+// 代替店: 合う(tier=合う)・tasted:true・クールダウン中でない・辛さ通過の中から axes が一番近い1軒。
+function pickAlternative(blocked, scored, visits, today) {
+  let best = null;
+  let bestD = Infinity;
+  for (const x of scored) {
+    if (x.tier !== "合う" || x.over || x.s.id === blocked.id) continue;
+    if (x.s.tasted === false || cooldownStatus(x.s, visits, today).blocked) continue;
+    const d = axisDist(x.s.axes, blocked.axes);
+    if (d < bestD) { bestD = d; best = x; }
+  }
+  return best;
+}
 
 const SAMPLE =
   "神保町のスマトラカレー共栄堂。深煎りを突き詰めたような強い苦味と焦がし感、酸味はほとんどない。クリームっぽいまろやかさもある。一般的な欧風カレーともスパイスカレーとも違って、初見ではかなり人を選ぶ。店主自身も『ウチのカレーはダメな人はダメ』と言っている。";
@@ -330,6 +374,20 @@ function loadTagMap() {
   }
 }
 
+// localStorage の visits:<storeId> を全店ぶん読み出して { storeId: ISO } にする
+function loadVisits() {
+  const out = {};
+  for (const s of STORES) {
+    try {
+      const v = localStorage.getItem(visitKey(s.id));
+      if (v) out[s.id] = v;
+    } catch {
+      /* 読めない店は無視 */
+    }
+  }
+  return out;
+}
+
 // カード上部の写真。store.image(URL or /stores/<id>.jpg) がある店だけ <img> を出す。
 // 空文字/未設定、または読み込み失敗のときは枠・余白・背景ごと一切描画しない（null）。
 function CardPhoto({ image, name }) {
@@ -358,11 +416,38 @@ function mapSearchUrl(name, area) {
 // 冒険モード(予測)時の判定ラベル。実食判定(合う/微妙/合わない)とは別の“予測”表現にする。
 const PREDICT_LABEL = { good: "合いそう", hmm: "微妙かも", bad: "合わなそう" };
 
+// 来店記録バー。cooldownDays のある店だけに出す。責めない・煽らない、優しい相棒トーン。
+function VisitBar({ last, remaining, onVisited, onReset }) {
+  if (!last) {
+    return (
+      <div style={S.visitBar}>
+        <button type="button" style={S.visitBtn} onClick={onVisited}>🍽 行った！</button>
+      </div>
+    );
+  }
+  const ok = remaining <= 0;
+  return (
+    <div style={S.visitBar}>
+      <div style={S.visitStatus}>
+        <span style={S.visitLast}>最終来店 {last}</span>
+        {ok
+          ? <span style={S.visitOk}>そろそろ行ってOK！</span>
+          : <span style={S.visitWait}>あと{remaining}日</span>}
+      </div>
+      <div style={S.visitBtns}>
+        <button type="button" style={S.visitBtn} onClick={onVisited}>🍽 また行った！</button>
+        <button type="button" style={S.visitReset} onClick={onReset}>リセット</button>
+      </div>
+    </div>
+  );
+}
+
 // 判定カード（写真＋正直パンマン＋2行理由＋スコア）。単発判定とピッカーの両方で再利用。
 // overrideLines を渡すと store.panman/caution をそのまま見立てに使う。
 // image/area は店データ（ピッカー）時のみ。単発判定では未指定→写真はプレースホルダ・地図リンク無し。
 // prediction=true（冒険モード）: 未食店の予測。ラベルを「合いそう/微妙かも」にし“未食・予測”バッジを出す。
-function VerdictCard({ taste, profile, intents, overrideLines, recommend, tip, image, area, prediction = false, loading = false, animKey = "x" }) {
+// visit: { last, remaining, onVisited, onReset } を渡すと来店記録バーを出す（cooldownDays のある店のみ）。
+function VerdictCard({ taste, profile, intents, overrideLines, recommend, tip, image, area, prediction = false, visit = null, loading = false, animKey = "x" }) {
   const base = calcMatch(taste, profile);
   const shownMatch = intentAdjustedMatch(base, taste, intents);
   const verdict = matchVerdict(shownMatch);
@@ -453,6 +538,8 @@ function VerdictCard({ taste, profile, intents, overrideLines, recommend, tip, i
           {tip && <p style={S.metaLine}><b style={S.metaKey}>ヒント</b>{tip}</p>}
         </div>
       )}
+
+      {visit && <VisitBar {...visit} />}
     </div>
   );
 }
@@ -477,11 +564,29 @@ export default function TasteSpoon() {
   const [area, setArea] = useState("すべて"); // エリア単選
   const [party, setParty] = useState("couple"); // couple=2人 / solo=自分だけ
   const [mode, setMode] = useState("iron"); // iron=鉄板(実食) / adventure=冒険(予測)
+  const [visits, setVisits] = useState(loadVisits); // { storeId: 最終来店日ISO }
   const resultRef = useRef(null);
 
   // モード切替（エリア候補が変わるので area はリセット）
   const switchMode = (m) => { setMode(m); setArea("すべて"); };
   const areas = AREAS_BY_MODE[mode];
+
+  // 来店記録（localStorage: visits:<storeId>）
+  const markVisited = (id) => {
+    const t = todayStr();
+    try { localStorage.setItem(visitKey(id), t); } catch { /* 保存失敗は無視 */ }
+    setVisits((v) => ({ ...v, [id]: t }));
+  };
+  const resetVisit = (id) => {
+    try { localStorage.removeItem(visitKey(id)); } catch { /* 無視 */ }
+    setVisits((v) => { const n = { ...v }; delete n[id]; return n; });
+  };
+  // cooldownDays のある店だけ visit prop を作る（無ければ null＝バー非表示）
+  const visitPropFor = (s) => {
+    if (!s.cooldownDays) return null;
+    const st = cooldownStatus(s, visits, todayStr());
+    return { last: st.last, remaining: st.remaining ?? 0, onVisited: () => markVisited(s.id), onReset: () => resetVisit(s.id) };
+  };
 
   const dishKey = result?.taste?.dish ?? "";
   const dishTags = new Set(tagMap[dishKey] ?? []);
@@ -568,7 +673,11 @@ export default function TasteSpoon() {
   });
   const spicy = scored.filter((x) => x.over);
   const safe = scored.filter((x) => !x.over);
-  const fitList = safe.filter((x) => x.tier === "合う").sort((a, b) => b.shown - a.shown).slice(0, 3);
+  const today = todayStr();
+  const fitAll = safe.filter((x) => x.tier === "合う").sort((a, b) => b.shown - a.shown);
+  // クールダウン中の合う店は「今日行ける」から外し、代替提案へ回す
+  const fitList = fitAll.filter((x) => !cooldownStatus(x.s, visits, today).blocked).slice(0, 3);
+  const fitBlocked = fitAll.filter((x) => cooldownStatus(x.s, visits, today).blocked);
   const avoidList = safe.filter((x) => x.tier !== "合う").sort((a, b) => b.shown - a.shown);
 
   // 冒険モード: 未食店(tasted:false)を calcMatch で予測。スコア降順で全件カード表示。
@@ -662,14 +771,45 @@ export default function TasteSpoon() {
           {/* 合う 上位3 */}
           <h2 style={S.sectionTitle}>🍞 今日のおすすめ</h2>
           {fitList.length === 0 ? (
-            <p style={S.emptyNote}>このエリア・条件だと「合う」店は無し。正直、別エリアか条件をゆるめてみて。</p>
+            <p style={S.emptyNote}>
+              {fitBlocked.length > 0
+                ? "今日行ける「合う」店はお休み中。下の代わりの提案を見てみて。"
+                : "このエリア・条件だと「合う」店は無し。正直、別エリアか条件をゆるめてみて。"}
+            </p>
           ) : (
             fitList.map(({ s }) => (
               <VerdictCard key={s.id} taste={{ ...s.axes, dish: s.name }} profile={profile}
                 intents={intents} overrideLines={{ line1: s.panman, line2: s.caution }}
-                recommend={s.recommend} tip={s.tip} image={s.image} area={s.area} animKey={s.id} />
+                recommend={s.recommend} tip={s.tip} image={s.image} area={s.area}
+                visit={visitPropFor(s)} animKey={s.id} />
             ))
           )}
+
+          {/* 頻度ガード: クールダウン中の店は「たまの楽しみに」＋代替提案 */}
+          {fitBlocked.map(({ s }) => {
+            const st = cooldownStatus(s, visits, today);
+            const alt = pickAlternative(s, scored, visits, today);
+            return (
+              <div key={`cd-${s.id}`}>
+                <div style={S.cooldownNote}>
+                  <p style={S.cooldownLine}>
+                    🍞 <b>{s.name}</b>は前回から{st.since}日、あと{st.remaining}日。まだ早いかも。
+                    たまの楽しみに取っておこう。{alt ? "代わりにこっちはどう？" : "今日は別の一皿にしようか。"}
+                  </p>
+                  <div style={S.cooldownMeta}>
+                    <span style={S.visitLast}>最終来店 {st.last}</span>
+                    <button type="button" style={S.visitReset} onClick={() => resetVisit(s.id)}>来店日をリセット</button>
+                  </div>
+                </div>
+                {alt && (
+                  <VerdictCard taste={{ ...alt.s.axes, dish: alt.s.name }} profile={profile}
+                    intents={intents} overrideLines={{ line1: alt.s.panman, line2: alt.s.caution }}
+                    recommend={alt.s.recommend} tip={alt.s.tip} image={alt.s.image} area={alt.s.area}
+                    visit={visitPropFor(alt.s)} animKey={`alt-${alt.s.id}`} />
+                )}
+              </div>
+            );
+          })}
 
           {/* 別枠: 正直に避けたい店（デフォルト閉じる・コンパクト行リスト） */}
           {avoidList.length > 0 && (
@@ -731,7 +871,7 @@ export default function TasteSpoon() {
               <VerdictCard key={s.id} taste={{ ...s.axes, dish: s.name }} profile={profile}
                 intents={intents} overrideLines={{ line1: s.panman, line2: s.caution }}
                 recommend={s.recommend} tip={s.tip} image={s.image} area={s.area}
-                prediction animKey={s.id} />
+                prediction visit={visitPropFor(s)} animKey={s.id} />
             ))
           )}
           </>
@@ -860,6 +1000,17 @@ const S = {
   predictBadgeRow: { display: "flex", justifyContent: "center", marginBottom: 10 },
   predictBadge: { fontSize: 12, fontWeight: 800, color: "#2f6fc4", background: "#eaf2fc", border: "2px solid #c3dbf5", borderRadius: 999, padding: "4px 12px" },
   predictNote: { margin: "-4px 4px 14px", textAlign: "center", fontSize: 12.5, fontWeight: 700, color: "#2f6fc4" },
+  visitBar: { marginTop: 12, paddingTop: 12, borderTop: "1px dashed #f0e3cd", display: "flex", flexDirection: "column", gap: 8 },
+  visitStatus: { display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 6 },
+  visitLast: { fontSize: 12, color: "#a08a6a", fontWeight: 600 },
+  visitWait: { fontSize: 12.5, fontWeight: 800, color: "#d9822b" },
+  visitOk: { fontSize: 12.5, fontWeight: 800, color: "#2f9e44" },
+  visitBtns: { display: "flex", gap: 8 },
+  visitBtn: { flex: 1, minHeight: 44, border: "2px solid #2f9e44", borderRadius: 12, background: "#fffefb", color: "#2f9e44", fontFamily: "inherit", fontSize: 14, fontWeight: 700, cursor: "pointer" },
+  visitReset: { minHeight: 44, padding: "0 14px", border: "2px solid #e3d2b4", borderRadius: 12, background: "#fffefb", color: "#a08a6a", fontFamily: "inherit", fontSize: 13, fontWeight: 700, cursor: "pointer" },
+  cooldownNote: { background: "#fff5e6", border: "2px solid #f0d9b5", borderRadius: 14, padding: "12px 14px", margin: "4px 0 10px" },
+  cooldownLine: { margin: 0, fontSize: 14.5, lineHeight: 1.75, fontWeight: 600, color: "#7a5236" },
+  cooldownMeta: { display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8, marginTop: 8 },
   filterLabel: { fontSize: 13, fontWeight: 700, color: "#7a5c34", margin: "12px 0 8px" },
   partyRow: { display: "flex", gap: 8 },
   partyBtn: { flex: 1, minHeight: 44, border: "2px solid #e3d2b4", borderRadius: 12, background: "#fffefb", color: "#7a5c34", fontFamily: "inherit", fontSize: 14.5, fontWeight: 700, cursor: "pointer" },

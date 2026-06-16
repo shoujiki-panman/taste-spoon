@@ -92,7 +92,8 @@
       "recommend": "ナン＋バターチキン（甘口）／ガーリックライス（塩がけ）",
       "tip": "待っているとラッシーをサービスしてくれることがある",
       "panmanVerdict": "合う",
-      "spice": 1
+      "spice": 1,
+      "cooldownDays": 14
     },
     {
       "id": "karayama-kawasaki",
@@ -116,7 +117,8 @@
       "recommend": "唐揚げ弁当（極ダレをかけて）",
       "tip": "毎回割引クーポンがもらえる",
       "panmanVerdict": "合う",
-      "spice": 0
+      "spice": 0,
+      "cooldownDays": 10
     },
     {
       "id": "hioki-shinagawa",
@@ -164,7 +166,8 @@
       "recommend": "おいしいラーメン",
       "tip": "",
       "panmanVerdict": "微妙",
-      "spice": 0
+      "spice": 0,
+      "cooldownDays": 10
     },
     {
       "id": "tamura-ginkatsutei",
@@ -236,7 +239,8 @@
       "recommend": "中華そば",
       "tip": "",
       "panmanVerdict": "合わない",
-      "spice": 0
+      "spice": 0,
+      "cooldownDays": 10
     },
     {
       "id": "kyoeido-jimbocho",
@@ -307,7 +311,8 @@
       "caution": "替玉前提だと量は普通。こってり苦手な日はちょっと重いかも（予測）。",
       "recommend": "ラーメン＋替玉、秘伝のたれは控えめから",
       "tip": "個室カウンターで一人でも入りやすい。",
-      "spice": 1
+      "spice": 1,
+      "cooldownDays": 14
     },
     {
       "id": "jiro-mita",
@@ -330,7 +335,8 @@
       "caution": "量・濃さ・ニンニクで初見はかなり身構える。覚悟がいる（予測）。",
       "recommend": "小ラーメン、コールは“ヤサイ少なめ”から",
       "tip": "行列必至。麺量が多いので空腹で。",
-      "spice": 0
+      "spice": 0,
+      "cooldownDays": 21
     },
     {
       "id": "cocoichi",
