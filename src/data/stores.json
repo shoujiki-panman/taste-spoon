@@ -28,6 +28,7 @@
       "area": "川崎",
       "genre": "ベーカリーカフェ",
       "signature": "フレンチトースト",
+      "image": "",
       "axes": {
         "bitter": 1,
         "sour": 1,
@@ -50,6 +51,7 @@
       "area": "銀座",
       "genre": "和食/釜飯",
       "signature": "鳥山菜の釜飯",
+      "image": "",
       "axes": {
         "bitter": 1,
         "sour": 1,
@@ -72,6 +74,7 @@
       "area": "川崎",
       "genre": "インド料理",
       "signature": "ナン＋バターチキン（甘口）",
+      "image": "",
       "axes": {
         "bitter": 1,
         "sour": 1,
@@ -94,6 +97,7 @@
       "area": "川崎",
       "genre": "からあげ/弁当",
       "signature": "唐揚げ弁当",
+      "image": "",
       "axes": {
         "bitter": 1,
         "sour": 1,
@@ -116,6 +120,7 @@
       "area": "品川",
       "genre": "定食",
       "signature": "チキン南蛮定食",
+      "image": "",
       "axes": {
         "bitter": 1,
         "sour": 2,
@@ -138,6 +143,7 @@
       "area": "都心",
       "genre": "ラーメン",
       "signature": "おいしいラーメン",
+      "image": "",
       "axes": {
         "bitter": 1,
         "sour": 1,
@@ -160,6 +166,7 @@
       "area": "箱根ほか",
       "genre": "とんかつ",
       "signature": "豆腐かつ煮",
+      "image": "",
       "axes": {
         "bitter": 1,
         "sour": 1,
@@ -182,6 +189,7 @@
       "area": "神田",
       "genre": "蕎麦",
       "signature": "せいろ",
+      "image": "",
       "axes": {
         "bitter": 1,
         "sour": 1,
@@ -204,6 +212,7 @@
       "area": "中野",
       "genre": "ラーメン",
       "signature": "中華そば（Wスープ）",
+      "image": "",
       "axes": {
         "bitter": 2,
         "sour": 1,
@@ -226,6 +235,7 @@
       "area": "神保町",
       "genre": "欧風カレー",
       "signature": "スマトラカレー",
+      "image": "",
       "axes": {
         "bitter": 5,
         "sour": 1,

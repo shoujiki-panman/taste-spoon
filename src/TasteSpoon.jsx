@@ -1,8 +1,4 @@
 import React, { useState, useRef, useEffect } from "react";
-import {
-  RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar,
-  ResponsiveContainer,
-} from "recharts";
 import PanmanAnim from "./PanmanAnim.jsx";
 import storesData from "./data/stores.json";
 
@@ -192,21 +188,20 @@ function verdictTier(score) {
   return { tier: "合わない", state: "bad", tone: "#e8590c" };
 }
 
-// 今日の気分／期待のチップ（任意・複数可）
+// 今日の気分のチップ（任意・複数可）。"その日で変わる気分" だけに絞る。
+// 苦味/深煎りの好みは固定の嗜好なので profile 側に反映済み（気分チップからは除外）。
 const INTENTS = [
-  { id: "bitterLove", label: "苦い・深煎り好き" },
-  { id: "bitterHate", label: "苦い・深煎り苦手" },
+  { id: "hearty", label: "がっつり" },
+  { id: "light", label: "軽め" },
   { id: "adventure", label: "冒険したい" },
   { id: "safe", label: "無難にいきたい" },
-  { id: "noFail", label: "失敗したくない" },
 ];
 // 同時に成立しないチップ（選ぶと相手を外す）
 const INTENT_CONFLICTS = {
-  bitterLove: ["bitterHate"],
-  bitterHate: ["bitterLove"],
-  adventure: ["safe", "noFail"],
+  hearty: ["light"],
+  light: ["hearty"],
+  adventure: ["safe"],
   safe: ["adventure"],
-  noFail: ["adventure"],
 };
 
 // calcMatch の結果(base)に「気分」による後段補正を足す。本体は不変。
@@ -214,14 +209,12 @@ const INTENT_CONFLICTS = {
 function intentAdjustedMatch(baseMatch, taste, intents) {
   if (!intents || intents.size === 0) return baseMatch;
   const pickyDev = (taste?.picky ?? 2.5) - 2.5; // + = 人を選ぶ
-  // 苦味・ロースト(深煎り)の合成。+ = 苦い/深煎りが強い店
-  const bitterDev = (((taste?.bitter ?? 2.5) + (taste?.roast ?? 2.5)) / 2) - 2.5;
+  const volumeDev = (taste?.volume ?? 2.5) - 2.5; // + = がっつり / - = 軽め
   let delta = 0;
   if (intents.has("adventure")) delta += 4 * pickyDev;
   if (intents.has("safe")) delta -= 4 * Math.max(0, pickyDev);
-  if (intents.has("noFail")) delta -= 5 * Math.max(0, pickyDev);
-  if (intents.has("bitterLove")) delta += 4 * bitterDev; // 苦い店ほど加点
-  if (intents.has("bitterHate")) delta -= 4 * Math.max(0, bitterDev); // 苦い店だけ減点
+  if (intents.has("hearty")) delta += 4 * Math.max(0, volumeDev); // volume 高めの店を加点
+  if (intents.has("light")) delta += 4 * Math.max(0, -volumeDev); // volume 低めの店を許容（加点）
   return Math.max(0, Math.min(100, Math.round(baseMatch + delta)));
 }
 
@@ -229,19 +222,21 @@ function intentAdjustedMatch(baseMatch, taste, intents) {
 function intentRemark(taste, intents) {
   if (!intents || intents.size === 0) return null;
   const picky = (taste?.picky ?? 2.5) >= 3.5;
-  const bitterAvg = ((taste?.bitter ?? 2.5) + (taste?.roast ?? 2.5)) / 2;
-  const bitter = bitterAvg >= 3.5;
-  const mild = bitterAvg <= 1.5;
+  const volume = taste?.volume ?? 2.5;
+  const heavy = volume >= 3.5;
+  const light = volume <= 1.5;
   if (intents.has("adventure") && picky)
     return "冒険したい今日なら、この尖り具合はむしろ楽しめるはず。";
-  if ((intents.has("noFail") || intents.has("safe")) && picky)
-    return "“失敗したくない”なら、ここは少し攻めすぎかも。覚悟がある日に取っておこう。";
-  if (intents.has("bitterLove") && bitter)
-    return "深煎り・苦め好きなら、この焦がし感はど真ん中のはず。";
-  if (intents.has("bitterHate") && bitter)
-    return "苦いのが苦手なら、この深煎りはちょっとキツいかも。正直、別の日がいい。";
-  if (intents.has("bitterHate") && mild)
-    return "苦いの苦手でも、ここは穏やかめ。安心して大丈夫。";
+  if (intents.has("safe") && picky)
+    return "“無難に”なら、ここは少し攻めすぎかも。覚悟がある日に取っておこう。";
+  if (intents.has("hearty") && heavy)
+    return "がっつり気分なら、このボリューム感はど真ん中のはず。";
+  if (intents.has("hearty") && light)
+    return "がっつり食べたい日には、ここはちょっと軽すぎるかも。";
+  if (intents.has("light") && light)
+    return "軽めでいきたい今日に、この軽やかさはちょうどいい。";
+  if (intents.has("light") && heavy)
+    return "軽めの気分だと、ここは重ためかも。お腹を空かせて行こう。";
   return null;
 }
 
@@ -331,9 +326,35 @@ function loadTagMap() {
   }
 }
 
-// 判定カード（正直パンマン＋2行理由＋スコア）。単発判定とピッカーの両方で再利用。
+// カード上部の写真。store.image(URL or /stores/<id>.jpg) がある店だけ <img> を出す。
+// 空文字/未設定、または読み込み失敗のときは枠・余白・背景ごと一切描画しない（null）。
+function CardPhoto({ image, name }) {
+  const [failed, setFailed] = useState(false);
+  const has = !!(image && image.trim());
+  if (!has || failed) return null;
+  return (
+    <div style={S.photoWrap}>
+      <img
+        src={image}
+        alt={`${name} の写真`}
+        style={S.photoImg}
+        onError={() => setFailed(true)}
+        loading="lazy"
+      />
+    </div>
+  );
+}
+
+// 店名＋エリアで Google マップ検索を新規タブで開く URL。
+function mapSearchUrl(name, area) {
+  const query = encodeURIComponent(`${name ?? ""} ${area ?? ""}`.trim());
+  return `https://www.google.com/maps/search/?api=1&query=${query}`;
+}
+
+// 判定カード（写真＋正直パンマン＋2行理由＋スコア）。単発判定とピッカーの両方で再利用。
 // overrideLines を渡すと store.panman/caution をそのまま見立てに使う。
-function VerdictCard({ taste, profile, intents, overrideLines, recommend, tip, loading = false, animKey = "x" }) {
+// image/area は店データ（ピッカー）時のみ。単発判定では未指定→写真はプレースホルダ・地図リンク無し。
+function VerdictCard({ taste, profile, intents, overrideLines, recommend, tip, image, area, loading = false, animKey = "x" }) {
   const base = calcMatch(taste, profile);
   const shownMatch = intentAdjustedMatch(base, taste, intents);
   const verdict = matchVerdict(shownMatch);
@@ -346,6 +367,8 @@ function VerdictCard({ taste, profile, intents, overrideLines, recommend, tip, l
 
   return (
     <div style={{ ...S.verdictCard, borderColor: tier.tone }}>
+      <CardPhoto image={image} name={taste.dish} />
+
       <div style={S.tierRow}>
         <span key={loading ? "loading" : `${tier.state}-${animKey}`} className="panman-pop" style={S.tierImgWrap}>
           <PanmanAnim
@@ -380,6 +403,19 @@ function VerdictCard({ taste, profile, intents, overrideLines, recommend, tip, l
         <span style={S.dishName}>{taste.dish}</span>
         <span style={S.subVerdict}>（{verdict.label}）</span>
       </div>
+
+      {area && (
+        <div style={S.mapRow}>
+          <a
+            href={mapSearchUrl(taste.dish, area)}
+            target="_blank"
+            rel="noopener noreferrer"
+            style={S.mapLink}
+          >
+            📍 地図で開く
+          </a>
+        </div>
+      )}
 
       <div style={S.scoreWrap}>
         <div style={S.scoreAux}>
@@ -501,8 +537,6 @@ export default function TasteSpoon() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [profile]);
 
-  const radarData = result ? AXES.map((a) => ({ axis: a.label, value: result.taste[a.key] ?? 0 })) : [];
-
   // 「今日どこ行く?」のピック結果（エリア単選＋辛さcap＋気分補正）
   const cap = SPICE_CAP[party];
   const areaStores = area === "すべて" ? STORES : STORES.filter((s) => s.area === area);
@@ -588,31 +622,54 @@ export default function TasteSpoon() {
             fitList.map(({ s }) => (
               <VerdictCard key={s.id} taste={{ ...s.axes, dish: s.name }} profile={profile}
                 intents={intents} overrideLines={{ line1: s.panman, line2: s.caution }}
-                recommend={s.recommend} tip={s.tip} animKey={s.id} />
+                recommend={s.recommend} tip={s.tip} image={s.image} area={s.area} animKey={s.id} />
             ))
           )}
 
-          {/* 別枠: 正直に避けたい店 */}
+          {/* 別枠: 正直に避けたい店（デフォルト閉じる・コンパクト行リスト） */}
           {avoidList.length > 0 && (
-            <>
-              <h2 style={{ ...S.sectionTitle, color: "#b06a2c" }}>正直、今日は微妙かも</h2>
-              <p style={S.sectionSub}>正直パンマンが「微妙／合わない」と思った店。避けたい人向けに正直に。</p>
-              {avoidList.map(({ s }) => (
-                <VerdictCard key={s.id} taste={{ ...s.axes, dish: s.name }} profile={profile}
-                  intents={intents} overrideLines={{ line1: s.panman, line2: s.caution }}
-                  recommend={s.recommend} tip={s.tip} animKey={s.id} />
-              ))}
-            </>
+            <details className="tune" style={S.collapseDetails}>
+              <summary style={{ ...S.collapseSummary, color: "#b06a2c" }}>
+                正直、今日は微妙かも（{avoidList.length}軒）
+              </summary>
+              <div style={S.collapseBody}>
+                <p style={S.sectionSub}>正直パンマンが「微妙／合わない」と思った店。避けたい人向けに正直に。</p>
+                <ul style={S.miniList}>
+                  {avoidList.map(({ s, tier }) => (
+                    <li key={s.id} style={S.miniRow}>
+                      <div style={S.miniHead}>
+                        <span style={S.miniName}>{s.name}</span>
+                        <span style={{ ...S.miniTag, color: tier === "微妙" ? "#d97a00" : "#e8590c",
+                          borderColor: tier === "微妙" ? "#f0c489" : "#f0b49c" }}>{tier}</span>
+                      </div>
+                      <p style={S.miniNote}>{s.panman}</p>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </details>
           )}
 
-          {/* 別枠: 辛さ注意 */}
+          {/* 別枠: 辛さ注意（デフォルト閉じる・コンパクト行リスト） */}
           {spicy.length > 0 && (
-            <div style={S.spicyBox}>
-              <p style={S.spicyTitle}>⚠ 辛さ注意（{party === "couple" ? "2人" : "自分"}の上限を超え）</p>
-              {spicy.map(({ s }) => (
-                <p key={s.id} style={S.spicyLine}>🌶 <b>{s.name}</b>（辛さ{s.spice}）— {s.signature}</p>
-              ))}
-            </div>
+            <details className="tune" style={S.collapseDetails}>
+              <summary style={{ ...S.collapseSummary, color: "#e8590c" }}>
+                ⚠ 辛さ注意（{spicy.length}軒・{party === "couple" ? "2人" : "自分"}の上限超え）
+              </summary>
+              <div style={S.collapseBody}>
+                <ul style={S.miniList}>
+                  {spicy.map(({ s }) => (
+                    <li key={s.id} style={S.miniRow}>
+                      <div style={S.miniHead}>
+                        <span style={S.miniName}>🌶 {s.name}</span>
+                        <span style={{ ...S.miniTag, color: "#e8590c", borderColor: "#f0b49c" }}>辛さ{s.spice}</span>
+                      </div>
+                      <p style={S.miniNote}>{s.signature}</p>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </details>
           )}
         </>
       )}
@@ -679,17 +736,6 @@ export default function TasteSpoon() {
                   </div>
                 </div>
               )}
-
-              <div style={S.chartWrap}>
-                <ResponsiveContainer width="100%" height={300}>
-                  <RadarChart data={radarData} outerRadius="72%">
-                    <PolarGrid stroke="#d8c9b0" />
-                    <PolarAngleAxis dataKey="axis" tick={{ fill: "#5a4a35", fontSize: 13, fontWeight: 600 }} />
-                    <PolarRadiusAxis domain={[0, 5]} tick={false} axisLine={false} />
-                    <Radar dataKey="value" stroke="#c0392b" fill="#e74c3c" fillOpacity={0.45} />
-                  </RadarChart>
-                </ResponsiveContainer>
-              </div>
             </section>
           )}
         </div>
@@ -747,9 +793,15 @@ const S = {
   sectionTitle: { fontSize: 17, fontWeight: 800, color: "#c0392b", margin: "22px 2px 6px" },
   sectionSub: { fontSize: 12.5, color: "#a08a6a", margin: "0 2px 10px" },
   emptyNote: { fontSize: 14, color: "#8a6f4a", background: "#fffdf7", border: "2px dashed #ecdcc0", borderRadius: 14, padding: "16px 14px", textAlign: "center" },
-  spicyBox: { background: "#fff3ef", border: "2px solid #f0c4b0", borderRadius: 14, padding: "12px 14px", margin: "16px 0" },
-  spicyTitle: { margin: "0 0 6px", fontSize: 13.5, fontWeight: 800, color: "#e8590c" },
-  spicyLine: { margin: "2px 0", fontSize: 13.5, color: "#7a5236" },
+  collapseDetails: { background: "#fffdf7", border: "2px solid #ecdcc0", borderRadius: 18, margin: "16px 0", boxShadow: "0 4px 16px rgba(160,120,60,.08)", overflow: "hidden" },
+  collapseSummary: { listStyle: "none", cursor: "pointer", padding: "14px 18px", fontWeight: 800, fontSize: 14.5, userSelect: "none" },
+  collapseBody: { padding: "0 16px 14px" },
+  miniList: { listStyle: "none", margin: 0, padding: 0 },
+  miniRow: { padding: "10px 2px", borderTop: "1px solid #f0e3cd" },
+  miniHead: { display: "flex", alignItems: "center", gap: 8 },
+  miniName: { flex: 1, fontSize: 14.5, fontWeight: 700, color: "#3d2f1e" },
+  miniTag: { flexShrink: 0, fontSize: 12, fontWeight: 800, padding: "2px 10px", borderRadius: 999, border: "2px solid", background: "#fffefb" },
+  miniNote: { margin: "4px 0 0", fontSize: 13, lineHeight: 1.65, color: "#8a6f4a" },
   metaBox: { marginTop: 10, paddingTop: 10, borderTop: "1px solid #f0e3cd" },
   metaLine: { margin: "3px 0", fontSize: 13.5, lineHeight: 1.6, color: "#5a4a35" },
   metaKey: { display: "inline-block", marginRight: 6, color: "#d9822b", fontWeight: 700 },
@@ -771,6 +823,10 @@ const S = {
   fbMeh: { borderColor: "#f08c00", color: "#d97a00" },
   fbNo: { borderColor: "#e8590c", color: "#e8590c" },
   verdictCard: { border: "3px solid", borderRadius: 18, padding: "20px 18px 18px", background: "#fffefb", marginBottom: 14 },
+  photoWrap: { height: 180, marginBottom: 14, borderRadius: 14, overflow: "hidden", background: "#fff5e6", border: "2px solid #f0d9b5", display: "flex", alignItems: "center", justifyContent: "center" },
+  photoImg: { width: "100%", height: "100%", objectFit: "cover", display: "block" },
+  mapRow: { textAlign: "center", margin: "-4px 0 14px" },
+  mapLink: { display: "inline-flex", alignItems: "center", gap: 4, minHeight: 40, padding: "8px 16px", borderRadius: 999, border: "2px solid #e3d2b4", background: "#fffefb", color: "#7a5c34", fontSize: 13.5, fontWeight: 700, textDecoration: "none" },
   tierRow: { display: "flex", alignItems: "center", justifyContent: "center", gap: 12, margin: "2px 0 10px" },
   tierImgWrap: { display: "inline-flex", lineHeight: 0 },
   idleWrap: { display: "flex", justifyContent: "center", margin: "2px 0 14px" },
@@ -799,7 +855,6 @@ const S = {
   dishRow: { marginBottom: 6 },
   dishLabel: { fontSize: 12, fontWeight: 700, color: "#bfa178", letterSpacing: "1px" },
   dish: { margin: "2px 0 8px", fontSize: 22, color: "#3d2f1e" },
-  chartWrap: { margin: "4px -6px 8px" },
   matchBox: { border: "2px solid", borderRadius: 14, padding: "14px 16px", margin: "8px 0 18px", background: "#fffefb" },
   matchHead: { display: "flex", justifyContent: "space-between", alignItems: "baseline" },
   matchLabel: { fontSize: 14, fontWeight: 700, color: "#6a5236" },
