@@ -83,11 +83,12 @@ function axisDist(a, b) {
   return d;
 }
 // 代替店: 合う(tier=合う)・tasted:true・クールダウン中でない・辛さ通過の中から axes が一番近い1軒。
-function pickAlternative(blocked, scored, visits, today) {
+// excludeIds: 既におすすめ表示中などで除外したい店（ダブり防止）。
+function pickAlternative(blocked, scored, visits, today, excludeIds = new Set()) {
   let best = null;
   let bestD = Infinity;
   for (const x of scored) {
-    if (x.tier !== "合う" || x.over || x.s.id === blocked.id) continue;
+    if (x.tier !== "合う" || x.over || x.s.id === blocked.id || excludeIds.has(x.s.id)) continue;
     if (x.s.tasted === false || cooldownStatus(x.s, visits, today).blocked) continue;
     const d = axisDist(x.s.axes, blocked.axes);
     if (d < bestD) { bestD = d; best = x; }
@@ -230,10 +231,12 @@ function matchVerdict(score) {
 //     合う    = 「ばっちり合うはず」(>=80) + 「わりと好きかも」(>=70)
 //     微妙    = 「ちょっと冒険」(>=56)
 //     合わない = 「覚悟して行こう」(<56)
+// tone は表示色のみ（しきい値・文言は不変）。Design.md §3 準拠で 微妙(黄)/合わない(赤) を分離し、
+// プロジェクタでも一目で見分けられるようにする。
 function verdictTier(score) {
-  if (score >= 70) return { tier: "合う", state: "good", tone: "#2f9e44" };
-  if (score >= 56) return { tier: "微妙", state: "hmm", tone: "#f08c00" };
-  return { tier: "合わない", state: "bad", tone: "#e8590c" };
+  if (score >= 70) return { tier: "合う", state: "good", tone: "#2f9e44" }; // 緑
+  if (score >= 56) return { tier: "微妙", state: "hmm", tone: "#e8a013" }; // 黄（旧 #f08c00）
+  return { tier: "合わない", state: "bad", tone: "#d83a2e" }; // 赤（旧 #e8590c）
 }
 
 // 今日の気分のチップ（任意・複数可）。"その日で変わる気分" だけに絞る。
@@ -666,11 +669,14 @@ export default function TasteSpoon() {
 
   // 鉄板モード: 実食店(tasted:true)からピック（エリア単選＋辛さcap＋気分補正）
   const cap = SPICE_CAP[party];
-  const ironAreaStores = area === "すべて" ? TASTED_STORES : TASTED_STORES.filter((s) => s.area === area);
-  const scored = ironAreaStores.map((s) => {
+  const scoreStore = (s) => {
     const shown = intentAdjustedMatch(calcMatch(s.axes, profile), s.axes, intents);
     return { s, shown, tier: verdictTier(shown).tier, over: (s.spice ?? 0) > cap };
-  });
+  };
+  const ironAreaStores = area === "すべて" ? TASTED_STORES : TASTED_STORES.filter((s) => s.area === area);
+  const scored = ironAreaStores.map(scoreStore);
+  // 代替提案はエリア横断（どのエリア選択でも安定して出す）。全実食店をスコアリング。
+  const scoredAll = TASTED_STORES.map(scoreStore);
   const spicy = scored.filter((x) => x.over);
   const safe = scored.filter((x) => !x.over);
   const today = todayStr();
@@ -785,15 +791,19 @@ export default function TasteSpoon() {
             ))
           )}
 
-          {/* 頻度ガード: クールダウン中の店は「たまの楽しみに」＋代替提案 */}
+          {/* 頻度ガード: クールダウン中の店は「たまの楽しみに」＋代替提案（代替はエリア横断） */}
+          {fitBlocked.length > 0 && (
+            <h2 style={{ ...S.sectionTitle, color: "#b06a2c" }}>🕒 今日はお休み中</h2>
+          )}
           {fitBlocked.map(({ s }) => {
             const st = cooldownStatus(s, visits, today);
-            const alt = pickAlternative(s, scored, visits, today);
+            const shownIds = new Set(fitList.map((x) => x.s.id));
+            const alt = pickAlternative(s, scoredAll, visits, today, shownIds);
             return (
-              <div key={`cd-${s.id}`}>
+              <div key={`cd-${s.id}`} style={S.cooldownGroup}>
                 <div style={S.cooldownNote}>
                   <p style={S.cooldownLine}>
-                    🍞 <b>{s.name}</b>は前回から{st.since}日、あと{st.remaining}日。まだ早いかも。
+                    🍞 <b>{s.name}</b>は前回から{st.since}日、あと<b>{st.remaining}日</b>。まだ早いかも。
                     たまの楽しみに取っておこう。{alt ? "代わりにこっちはどう？" : "今日は別の一皿にしようか。"}
                   </p>
                   <div style={S.cooldownMeta}>
@@ -824,8 +834,8 @@ export default function TasteSpoon() {
                     <li key={s.id} style={S.miniRow}>
                       <div style={S.miniHead}>
                         <span style={S.miniName}>{s.name}</span>
-                        <span style={{ ...S.miniTag, color: tier === "微妙" ? "#d97a00" : "#e8590c",
-                          borderColor: tier === "微妙" ? "#f0c489" : "#f0b49c" }}>{tier}</span>
+                        <span style={{ ...S.miniTag, color: tier === "微妙" ? "#b87d0a" : "#c0271c",
+                          borderColor: tier === "微妙" ? "#ecc873" : "#eaa79f" }}>{tier}</span>
                       </div>
                       <p style={S.miniNote}>{s.panman}</p>
                     </li>
@@ -1000,17 +1010,18 @@ const S = {
   predictBadgeRow: { display: "flex", justifyContent: "center", marginBottom: 10 },
   predictBadge: { fontSize: 12, fontWeight: 800, color: "#2f6fc4", background: "#eaf2fc", border: "2px solid #c3dbf5", borderRadius: 999, padding: "4px 12px" },
   predictNote: { margin: "-4px 4px 14px", textAlign: "center", fontSize: 12.5, fontWeight: 700, color: "#2f6fc4" },
-  visitBar: { marginTop: 12, paddingTop: 12, borderTop: "1px dashed #f0e3cd", display: "flex", flexDirection: "column", gap: 8 },
-  visitStatus: { display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 6 },
-  visitLast: { fontSize: 12, color: "#a08a6a", fontWeight: 600 },
-  visitWait: { fontSize: 12.5, fontWeight: 800, color: "#d9822b" },
-  visitOk: { fontSize: 12.5, fontWeight: 800, color: "#2f9e44" },
+  visitBar: { marginTop: 12, paddingTop: 12, borderTop: "1px dashed #f0e3cd", display: "flex", flexDirection: "column", gap: 10 },
+  visitStatus: { display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8 },
+  visitLast: { fontSize: 12.5, color: "#8a6f4a", fontWeight: 700 },
+  visitWait: { fontSize: 14, fontWeight: 800, color: "#b06a2c", background: "#fbe6cf", borderRadius: 999, padding: "3px 12px" },
+  visitOk: { fontSize: 14, fontWeight: 800, color: "#2f9e44", background: "#e3f3e7", borderRadius: 999, padding: "3px 12px" },
   visitBtns: { display: "flex", gap: 8 },
-  visitBtn: { flex: 1, minHeight: 44, border: "2px solid #2f9e44", borderRadius: 12, background: "#fffefb", color: "#2f9e44", fontFamily: "inherit", fontSize: 14, fontWeight: 700, cursor: "pointer" },
-  visitReset: { minHeight: 44, padding: "0 14px", border: "2px solid #e3d2b4", borderRadius: 12, background: "#fffefb", color: "#a08a6a", fontFamily: "inherit", fontSize: 13, fontWeight: 700, cursor: "pointer" },
-  cooldownNote: { background: "#fff5e6", border: "2px solid #f0d9b5", borderRadius: 14, padding: "12px 14px", margin: "4px 0 10px" },
-  cooldownLine: { margin: 0, fontSize: 14.5, lineHeight: 1.75, fontWeight: 600, color: "#7a5236" },
-  cooldownMeta: { display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8, marginTop: 8 },
+  visitBtn: { flex: 1, minHeight: 46, border: "2px solid #2f9e44", borderRadius: 12, background: "#fffefb", color: "#2f9e44", fontFamily: "inherit", fontSize: 14.5, fontWeight: 800, cursor: "pointer" },
+  visitReset: { minHeight: 46, padding: "0 14px", border: "2px solid #e3d2b4", borderRadius: 12, background: "#fffefb", color: "#8a6f4a", fontFamily: "inherit", fontSize: 13, fontWeight: 700, cursor: "pointer" },
+  cooldownGroup: { borderLeft: "4px solid #e0a96b", paddingLeft: 12, marginBottom: 18 },
+  cooldownNote: { background: "#fff3e0", border: "2px solid #ecc79a", borderRadius: 14, padding: "13px 15px", margin: "0 0 12px" },
+  cooldownLine: { margin: 0, fontSize: 15, lineHeight: 1.8, fontWeight: 700, color: "#7a5236" },
+  cooldownMeta: { display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8, marginTop: 10 },
   filterLabel: { fontSize: 13, fontWeight: 700, color: "#7a5c34", margin: "12px 0 8px" },
   partyRow: { display: "flex", gap: 8 },
   partyBtn: { flex: 1, minHeight: 44, border: "2px solid #e3d2b4", borderRadius: 12, background: "#fffefb", color: "#7a5c34", fontFamily: "inherit", fontSize: 14.5, fontWeight: 700, cursor: "pointer" },
