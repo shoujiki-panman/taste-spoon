@@ -5,7 +5,11 @@ import storesData from "./data/stores.json";
 const STORES = storesData.stores;
 const SELF_PROFILE = storesData.profile.axes; // 『自分たち』をデフォルト/プリセットに
 const SPICE_CAP = { couple: 1, solo: 2 }; // 2人/自分だけ の辛さ上限
-const AREAS = ["すべて", ...Array.from(new Set(STORES.map((s) => s.area)))];
+// 鉄板モード=実食店(tasted:true) / 冒険モード=未食店(tasted:false・予測)。
+const TASTED_STORES = STORES.filter((s) => s.tasted !== false);
+const ADVENTURE_STORES = STORES.filter((s) => s.tasted === false);
+const areasOf = (list) => ["すべて", ...Array.from(new Set(list.map((s) => s.area)))];
+const AREAS_BY_MODE = { iron: areasOf(TASTED_STORES), adventure: areasOf(ADVENTURE_STORES) };
 
 // ─────────────────────────────────────────────────────────────
 // Taste Spoon ― 味の特徴を一口で
@@ -351,10 +355,14 @@ function mapSearchUrl(name, area) {
   return `https://www.google.com/maps/search/?api=1&query=${query}`;
 }
 
+// 冒険モード(予測)時の判定ラベル。実食判定(合う/微妙/合わない)とは別の“予測”表現にする。
+const PREDICT_LABEL = { good: "合いそう", hmm: "微妙かも", bad: "合わなそう" };
+
 // 判定カード（写真＋正直パンマン＋2行理由＋スコア）。単発判定とピッカーの両方で再利用。
 // overrideLines を渡すと store.panman/caution をそのまま見立てに使う。
 // image/area は店データ（ピッカー）時のみ。単発判定では未指定→写真はプレースホルダ・地図リンク無し。
-function VerdictCard({ taste, profile, intents, overrideLines, recommend, tip, image, area, loading = false, animKey = "x" }) {
+// prediction=true（冒険モード）: 未食店の予測。ラベルを「合いそう/微妙かも」にし“未食・予測”バッジを出す。
+function VerdictCard({ taste, profile, intents, overrideLines, recommend, tip, image, area, prediction = false, loading = false, animKey = "x" }) {
   const base = calcMatch(taste, profile);
   const shownMatch = intentAdjustedMatch(base, taste, intents);
   const verdict = matchVerdict(shownMatch);
@@ -364,9 +372,16 @@ function VerdictCard({ taste, profile, intents, overrideLines, recommend, tip, i
   const typed = useTypewriter(lines.line1, animKey);
   const bubbleText = loading ? "ふむふむ…正直に味見中" : typed;
   const typing = !loading && typed.length < lines.line1.length;
+  const tierLabel = prediction ? PREDICT_LABEL[tier.state] : tier.tier; // 予測時は断定しない
 
   return (
     <div style={{ ...S.verdictCard, borderColor: tier.tone }}>
+      {prediction && (
+        <div style={S.predictBadgeRow}>
+          <span style={S.predictBadge}>🔮 未食・予測</span>
+        </div>
+      )}
+
       <CardPhoto image={image} name={taste.dish} />
 
       <div style={S.tierRow}>
@@ -374,10 +389,10 @@ function VerdictCard({ taste, profile, intents, overrideLines, recommend, tip, i
           <PanmanAnim
             state={loading ? "loading" : tier.state}
             size={112}
-            alt={loading ? "正直パンマンが調査中" : `正直パンマン（${tier.tier}）`}
+            alt={loading ? "正直パンマンが調査中" : `正直パンマン（${tierLabel}）`}
           />
         </span>
-        <span style={{ ...S.tierLabel, color: tier.tone }}>{tier.tier}</span>
+        <span style={{ ...S.tierLabel, color: tier.tone }}>{tierLabel}</span>
       </div>
 
       <div
@@ -398,6 +413,8 @@ function VerdictCard({ taste, profile, intents, overrideLines, recommend, tip, i
         {!loading && !typing && lines.line2 && <p style={S.reasonText2}>{lines.line2}</p>}
         {!loading && !typing && remark && <p style={S.reasonRemark}>{remark}</p>}
       </div>
+
+      {prediction && <p style={S.predictNote}>🔮 まだ食べてないから、パンマンの予想だよ。</p>}
 
       <div style={S.dishLine}>
         <span style={S.dishName}>{taste.dish}</span>
@@ -456,10 +473,15 @@ export default function TasteSpoon() {
   const [feedback, setFeedback] = useState(null); // null | 'fit' | 'meh' | 'no'
   const [intents, setIntents] = useState(() => new Set()); // 今日の気分（任意・複数）
   const [tagMap, setTagMap] = useState(loadTagMap); // 食後タグ（料理名キー）
-  const [picked, setPicked] = useState(false); // 「今日どこ行く?」押下後に結果表示
+  const [picked, setPicked] = useState(false); // ボタン押下後に結果表示
   const [area, setArea] = useState("すべて"); // エリア単選
   const [party, setParty] = useState("couple"); // couple=2人 / solo=自分だけ
+  const [mode, setMode] = useState("iron"); // iron=鉄板(実食) / adventure=冒険(予測)
   const resultRef = useRef(null);
+
+  // モード切替（エリア候補が変わるので area はリセット）
+  const switchMode = (m) => { setMode(m); setArea("すべて"); };
+  const areas = AREAS_BY_MODE[mode];
 
   const dishKey = result?.taste?.dish ?? "";
   const dishTags = new Set(tagMap[dishKey] ?? []);
@@ -537,10 +559,10 @@ export default function TasteSpoon() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [profile]);
 
-  // 「今日どこ行く?」のピック結果（エリア単選＋辛さcap＋気分補正）
+  // 鉄板モード: 実食店(tasted:true)からピック（エリア単選＋辛さcap＋気分補正）
   const cap = SPICE_CAP[party];
-  const areaStores = area === "すべて" ? STORES : STORES.filter((s) => s.area === area);
-  const scored = areaStores.map((s) => {
+  const ironAreaStores = area === "すべて" ? TASTED_STORES : TASTED_STORES.filter((s) => s.area === area);
+  const scored = ironAreaStores.map((s) => {
     const shown = intentAdjustedMatch(calcMatch(s.axes, profile), s.axes, intents);
     return { s, shown, tier: verdictTier(shown).tier, over: (s.spice ?? 0) > cap };
   });
@@ -548,6 +570,12 @@ export default function TasteSpoon() {
   const safe = scored.filter((x) => !x.over);
   const fitList = safe.filter((x) => x.tier === "合う").sort((a, b) => b.shown - a.shown).slice(0, 3);
   const avoidList = safe.filter((x) => x.tier !== "合う").sort((a, b) => b.shown - a.shown);
+
+  // 冒険モード: 未食店(tasted:false)を calcMatch で予測。スコア降順で全件カード表示。
+  const advAreaStores = area === "すべて" ? ADVENTURE_STORES : ADVENTURE_STORES.filter((s) => s.area === area);
+  const advList = advAreaStores
+    .map((s) => ({ s, shown: intentAdjustedMatch(calcMatch(s.axes, profile), s.axes, intents) }))
+    .sort((a, b) => b.shown - a.shown);
 
   return (
     <div style={S.page}>
@@ -571,9 +599,24 @@ export default function TasteSpoon() {
         <PanmanAnim state="idle" size={96} />
       </div>
 
-      {/* メイン: 今日どこ行く? */}
+      {/* モード切替: 鉄板(実食保証) / 冒険(予測で発見) */}
+      <div style={S.modeRow}>
+        {[
+          ["iron", "🍳 鉄板モード", "実食保証"],
+          ["adventure", "🧭 冒険モード", "予測で発見"],
+        ].map(([id, main, sub]) => (
+          <button key={id} type="button" aria-pressed={mode === id}
+            onClick={() => switchMode(id)}
+            style={{ ...S.modeBtn, ...(mode === id ? S.modeBtnOn : null) }}>
+            <span style={S.modeMain}>{main}</span>
+            <span style={{ ...S.modeSub, ...(mode === id ? S.modeSubOn : null) }}>{sub}</span>
+          </button>
+        ))}
+      </div>
+
+      {/* メイン: 今日どこ行く? / 冒険する? */}
       <button style={S.bigBtn} onClick={() => setPicked(true)}>
-        今日どこ行く？🥄
+        {mode === "iron" ? "今日どこ行く？🥄" : "冒険する？🧭"}
       </button>
 
       {picked && (
@@ -582,7 +625,7 @@ export default function TasteSpoon() {
           <section style={S.card}>
             <div style={S.filterLabel}>エリア</div>
             <div style={S.chipWrap}>
-              {AREAS.map((a) => (
+              {areas.map((a) => (
                 <button key={a} type="button" aria-pressed={area === a}
                   onClick={() => setArea(a)} style={{ ...S.chip, ...(area === a ? S.chipOn : null) }}>
                   {area === a ? "✓ " : ""}{a}
@@ -614,6 +657,8 @@ export default function TasteSpoon() {
             </div>
           </section>
 
+          {mode === "iron" ? (
+          <>
           {/* 合う 上位3 */}
           <h2 style={S.sectionTitle}>🍞 今日のおすすめ</h2>
           {fitList.length === 0 ? (
@@ -670,6 +715,26 @@ export default function TasteSpoon() {
                 </ul>
               </div>
             </details>
+          )}
+          </>
+          ) : (
+          <>
+          {/* 冒険モード: 未食店を予測で発見（calcMatch は鉄板と同じ・断定はしない） */}
+          <h2 style={S.sectionTitle}>🧭 冒険モード（予測で発見）</h2>
+          <p style={S.sectionSub}>
+            まだ実食してない有名店を、正直パンマンが axes から“予測”。保証じゃなく「合いそう／微妙かも」だよ。
+          </p>
+          {advList.length === 0 ? (
+            <p style={S.emptyNote}>このエリアには冒険候補がまだ無い。別エリアか「すべて」で見てみて。</p>
+          ) : (
+            advList.map(({ s }) => (
+              <VerdictCard key={s.id} taste={{ ...s.axes, dish: s.name }} profile={profile}
+                intents={intents} overrideLines={{ line1: s.panman, line2: s.caution }}
+                recommend={s.recommend} tip={s.tip} image={s.image} area={s.area}
+                prediction animKey={s.id} />
+            ))
+          )}
+          </>
           )}
         </>
       )}
@@ -786,6 +851,15 @@ const S = {
   chipOn: { borderColor: "#c0392b", background: "#c0392b", color: "#fff", boxShadow: "0 2px 8px rgba(192,57,43,.22)" },
   btn: { marginTop: 14, width: "100%", padding: "13px 0", border: "none", borderRadius: 12, background: "#c0392b", color: "#fff", fontSize: 15.5, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", letterSpacing: ".5px" },
   bigBtn: { width: "100%", minHeight: 60, padding: "16px 0", border: "none", borderRadius: 18, background: "#c0392b", color: "#fff", fontSize: 22, fontWeight: 800, cursor: "pointer", fontFamily: "'Bagel Fat One',sans-serif", letterSpacing: ".5px", boxShadow: "0 6px 18px rgba(192,57,43,.28)", marginBottom: 18 },
+  modeRow: { display: "flex", gap: 10, marginBottom: 12 },
+  modeBtn: { flex: 1, minHeight: 60, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 2, border: "2px solid #e3d2b4", borderRadius: 14, background: "#fffefb", color: "#7a5c34", fontFamily: "inherit", cursor: "pointer" },
+  modeBtnOn: { borderColor: "#c0392b", background: "#c0392b", color: "#fff", boxShadow: "0 3px 10px rgba(192,57,43,.22)" },
+  modeMain: { fontSize: 15.5, fontWeight: 800 },
+  modeSub: { fontSize: 11.5, fontWeight: 700, color: "#a08a6a" },
+  modeSubOn: { color: "#ffe6df" },
+  predictBadgeRow: { display: "flex", justifyContent: "center", marginBottom: 10 },
+  predictBadge: { fontSize: 12, fontWeight: 800, color: "#2f6fc4", background: "#eaf2fc", border: "2px solid #c3dbf5", borderRadius: 999, padding: "4px 12px" },
+  predictNote: { margin: "-4px 4px 14px", textAlign: "center", fontSize: 12.5, fontWeight: 700, color: "#2f6fc4" },
   filterLabel: { fontSize: 13, fontWeight: 700, color: "#7a5c34", margin: "12px 0 8px" },
   partyRow: { display: "flex", gap: 8 },
   partyBtn: { flex: 1, minHeight: 44, border: "2px solid #e3d2b4", borderRadius: 12, background: "#fffefb", color: "#7a5c34", fontFamily: "inherit", fontSize: 14.5, fontWeight: 700, cursor: "pointer" },
