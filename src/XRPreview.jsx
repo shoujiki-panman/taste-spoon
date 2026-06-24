@@ -1,77 +1,126 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
+const PIPELINE = [
+  { id: "detect", label: "Scene", detail: "店頭と料理候補を検出" },
+  { id: "translate", label: "Taste", detail: "味覚センサーへ変換" },
+  { id: "judge", label: "Fit", detail: "自分との相性を判定" },
+  { id: "plan", label: "Action", detail: "次の一手を提示" },
+];
+
 const SCENES = [
   {
     id: "wakaze",
     target: "中華そば 和渦 TOKYO",
     menu: "特製醤油そば",
     area: "品川",
-    verdict: "合いそう",
+    verdict: "GO",
+    verdictJa: "合いそう",
     confidence: 78,
-    tone: "#2f9e44",
+    tone: "#38d996",
+    accent: "#f8c46b",
+    bg: "linear-gradient(135deg, #151d24 0%, #3d5159 45%, #d6b27a 46%, #f1d7a3 58%, #27302a 59%, #101513 100%)",
     recognized: {
-      title: "店頭/メニュー: 醤油ラーメン系",
-      detail: "写真や店頭情報から、旨味・完成度・初見適性を優先してTaste Spoonの味覚センサーへ変換。",
+      title: "醤油ラーメン / 旨味主導",
+      detail: "完成度・初見適性・苦味の低さを優先して照合。",
       tags: ["ramen", "umami-led", "first visit"],
     },
-    summary: "旨味と完成度で刺さる可能性が高い。苦味・焦げリスクは低め。",
-    sensors: [
-      { label: "旨味", value: 86, tone: "#2f9e44" },
-      { label: "満足感", value: 72, tone: "#74b816" },
-      { label: "苦味リスク", value: 18, tone: "#12b886" },
-      { label: "クセ", value: 34, tone: "#fab005" },
+    object: {
+      title: "Menu board",
+      lines: ["特製醤油そば", "鶏と魚介の旨味", "初見向き"],
+    },
+    anchors: [
+      { x: 24, y: 28, label: "店頭", value: "品川 / 初見OK", tone: "#8ce99a" },
+      { x: 61, y: 31, label: "料理", value: "醤油そば", tone: "#f8c46b" },
+      { x: 46, y: 58, label: "注意", value: "苦味リスク低", tone: "#63e6be" },
     ],
-    reasons: ["ryohe860の肯定センサー検証向き", "初見でも入りやすい", "食後ログで完成度を確認"],
-    alternative: "軽めにしたい日は、麺量少なめで検証",
-    bg: "linear-gradient(135deg, #1b2735 0%, #45545f 46%, #d6b27a 47%, #f1d7a3 58%, #27302a 59%, #151817 100%)",
+    sensors: [
+      { label: "旨味", value: 86, tone: "#38d996" },
+      { label: "完成度", value: 78, tone: "#8ce99a" },
+      { label: "苦味リスク", value: 18, tone: "#63e6be" },
+      { label: "クセ", value: 34, tone: "#f8c46b" },
+    ],
+    insights: [
+      { label: "Positive sensor", value: "ryohe860の肯定センサー検証向き" },
+      { label: "Why", value: "旨味と完成度で刺さる可能性が高い" },
+      { label: "Log after visit", value: "完成度・食後満足・苦味の有無を記録" },
+    ],
+    action: "実食前予測として登録。軽めにしたい日は麺量少なめで検証。",
   },
   {
     id: "agefuku",
     target: "あげ福",
     menu: "とんかつ定食",
     area: "五反田",
-    verdict: "強く合いそう",
+    verdict: "STRONG GO",
+    verdictJa: "強く合いそう",
     confidence: 84,
-    tone: "#2f9e44",
+    tone: "#38d996",
+    accent: "#ffb86b",
+    bg: "linear-gradient(135deg, #251a14 0%, #5b3a26 34%, #c79546 35%, #f3c977 49%, #fff0c8 50%, #352018 100%)",
     recognized: {
-      title: "店頭/メニュー: とんかつ定食",
-      detail: "写真や店頭情報から、肉・脂・満足感の強さを抽出し、ご褒美枠として照合。",
+      title: "とんかつ / 満足感主導",
+      detail: "肉・脂・食後満足の強さをご褒美枠として照合。",
       tags: ["tonkatsu", "rich", "reward meal"],
     },
-    summary: "肉・脂・満足感はかなり強い。ご褒美枠として相性が良さそう。",
-    sensors: [
-      { label: "満足感", value: 94, tone: "#2f9e44" },
-      { label: "旨味", value: 82, tone: "#2f9e44" },
-      { label: "重さ", value: 77, tone: "#f08c00" },
-      { label: "クセ", value: 22, tone: "#74b816" },
+    object: {
+      title: "Plate detected",
+      lines: ["厚切りロース", "揚げたて", "満足感強め"],
+    },
+    anchors: [
+      { x: 25, y: 36, label: "主役", value: "肉/脂", tone: "#ffb86b" },
+      { x: 58, y: 28, label: "相性", value: "満足感高", tone: "#8ce99a" },
+      { x: 48, y: 62, label: "制約", value: "頻度管理", tone: "#ffd43b" },
     ],
-    reasons: ["肉/脂の満足感が好みに近い", "初見適性が高い", "ダイエット中は頻度管理が必要"],
-    alternative: "普段使いより、検証日・ご褒美日に回す",
-    bg: "linear-gradient(135deg, #2d2118 0%, #5b3a26 34%, #c79546 35%, #f3c977 49%, #fff0c8 50%, #442919 100%)",
+    sensors: [
+      { label: "満足感", value: 94, tone: "#38d996" },
+      { label: "旨味", value: 82, tone: "#8ce99a" },
+      { label: "重さ", value: 77, tone: "#ffb86b" },
+      { label: "クセ", value: 22, tone: "#63e6be" },
+    ],
+    insights: [
+      { label: "Positive sensor", value: "肉/脂の満足感が好みに近い" },
+      { label: "Constraint", value: "日常枠ではなく検証日・ご褒美日向き" },
+      { label: "Log after visit", value: "重さと満足感の釣り合いを見る" },
+    ],
+    action: "普段使いより、ご褒美日の候補として保存。",
   },
   {
     id: "kyoeido",
     target: "共栄堂",
     menu: "スマトラカレー",
     area: "神保町",
-    verdict: "注意",
+    verdict: "CAUTION",
+    verdictJa: "注意",
     confidence: 43,
-    tone: "#e8590c",
+    tone: "#ff8a5c",
+    accent: "#ffd43b",
+    bg: "linear-gradient(135deg, #100d0b 0%, #2f241d 35%, #65452f 36%, #966841 48%, #1f1713 49%, #0c0b0a 100%)",
     recognized: {
-      title: "店頭/メニュー: スマトラカレー",
-      detail: "写真や店頭情報から、苦味・焦げ・強いクセの可能性を検出。負アンカーとして扱う。",
+      title: "スマトラカレー / 苦味リスク",
+      detail: "苦味・焦げ・通好みの強さを負アンカーとして照合。",
       tags: ["curry", "bitter risk", "negative anchor"],
     },
-    summary: "苦味・焦げ・通好みリスクが高い。負アンカーとして記録価値は大きい。",
-    sensors: [
-      { label: "苦味リスク", value: 92, tone: "#e8590c" },
-      { label: "焦げ感", value: 88, tone: "#e8590c" },
-      { label: "クセ", value: 86, tone: "#f08c00" },
-      { label: "満足感", value: 52, tone: "#fab005" },
+    object: {
+      title: "Curry context",
+      lines: ["黒めのソース", "苦味/焦げ", "通好み"],
+    },
+    anchors: [
+      { x: 26, y: 31, label: "味覚", value: "苦味強", tone: "#ff8a5c" },
+      { x: 62, y: 38, label: "焦げ", value: "高リスク", tone: "#ffd43b" },
+      { x: 43, y: 64, label: "用途", value: "負アンカー", tone: "#ff8787" },
     ],
-    reasons: ["ただの食べ盛り/たーさん7331の負センサーと一致", "苦味と焦げが前面に出そう", "好きな人には刺さるが自分には危険"],
-    alternative: "苦味検証ではなく、避ける軸の確認に使う",
-    bg: "linear-gradient(135deg, #120f0d 0%, #2f241d 35%, #65452f 36%, #966841 48%, #1f1713 49%, #0c0b0a 100%)",
+    sensors: [
+      { label: "苦味リスク", value: 92, tone: "#ff8a5c" },
+      { label: "焦げ感", value: 88, tone: "#ff8787" },
+      { label: "クセ", value: 86, tone: "#ffd43b" },
+      { label: "満足感", value: 52, tone: "#f8c46b" },
+    ],
+    insights: [
+      { label: "Negative sensor", value: "ただの食べ盛り/たーさん7331の負センサーと一致" },
+      { label: "Why", value: "好きな人には刺さるが、自分には危険" },
+      { label: "Use", value: "避ける軸の確認に使う" },
+    ],
+    action: "実食候補ではなく、苦味・焦げNG軸の学習データとして扱う。",
   },
 ];
 
@@ -80,24 +129,38 @@ const UNKNOWN_SCENE = {
   target: "未判定の写真",
   menu: "写真入力",
   area: "Web PoC",
-  verdict: "判断できない",
+  verdict: "HOLD",
+  verdictJa: "判断できない",
   confidence: 12,
-  tone: "#868e96",
+  tone: "#adb5bd",
+  accent: "#ffd43b",
+  bg: "linear-gradient(135deg, #20252b 0%, #535b63 45%, #adb5bd 46%, #dee2e6 56%, #30363d 57%, #16191d 100%)",
   recognized: {
     title: "店名/料理を特定できません",
-    detail: "このPoCでは、デモ対象外の写真に対して味覚判定を出しません。次はVision API等で店名・料理名の候補を取る想定です。",
+    detail: "デモ対象外の写真は、根拠なしに味覚判定を出さず保留。",
     tags: ["unknown input", "no match", "honest fallback"],
   },
-  summary: "根拠が薄い写真は、合う/合わないを無理に出さずに止めます。",
-  sensors: [
-    { label: "認識根拠", value: 18, tone: "#868e96" },
-    { label: "味覚根拠", value: 12, tone: "#868e96" },
-    { label: "要追加入力", value: 88, tone: "#f08c00" },
-    { label: "判定保留", value: 92, tone: "#e8590c" },
+  object: {
+    title: "Unknown frame",
+    lines: ["店名なし", "料理候補なし", "追加入力待ち"],
+  },
+  anchors: [
+    { x: 24, y: 33, label: "入力", value: "写真のみ", tone: "#ced4da" },
+    { x: 61, y: 35, label: "候補", value: "未特定", tone: "#ffd43b" },
+    { x: 44, y: 63, label: "判定", value: "保留", tone: "#ff8787" },
   ],
-  reasons: ["デモ対象に一致しない", "料理名/店名が取れていない", "根拠なしの判定は出さない"],
-  alternative: "店名・料理名を入力してから、味覚センサーへ変換する",
-  bg: "linear-gradient(135deg, #20252b 0%, #535b63 45%, #adb5bd 46%, #dee2e6 56%, #30363d 57%, #16191d 100%)",
+  sensors: [
+    { label: "認識根拠", value: 18, tone: "#ced4da" },
+    { label: "味覚根拠", value: 12, tone: "#adb5bd" },
+    { label: "要追加入力", value: 88, tone: "#ffd43b" },
+    { label: "判定保留", value: 92, tone: "#ff8787" },
+  ],
+  insights: [
+    { label: "Stop condition", value: "対象がデモ店舗/メニューに一致しない" },
+    { label: "Reason", value: "料理名・店名が取れていない" },
+    { label: "Next", value: "Vision APIで候補抽出を追加する" },
+  ],
+  action: "店名・料理名の候補を取ってから味覚センサーへ変換する。",
 };
 
 const SCENE_OPTIONS = SCENES;
@@ -108,13 +171,21 @@ export default function XRPreview() {
   const [cameraOn, setCameraOn] = useState(false);
   const [cameraError, setCameraError] = useState("");
   const [scanState, setScanState] = useState("ready");
+  const [stepIndex, setStepIndex] = useState(0);
   const [imageUrl, setImageUrl] = useState("");
   const videoRef = useRef(null);
   const streamRef = useRef(null);
-  const active = useMemo(() => SCENE_LOOKUP.find((s) => s.id === activeId) ?? SCENES[0], [activeId]);
+  const active = useMemo(() => SCENE_LOOKUP.find((scene) => scene.id === activeId) ?? SCENES[0], [activeId]);
+  const currentStep = PIPELINE[stepIndex];
 
   useEffect(() => {
-    return () => stopCamera();
+    const timer = window.setInterval(() => {
+      setStepIndex((index) => (index + 1) % PIPELINE.length);
+    }, 2100);
+    return () => {
+      window.clearInterval(timer);
+      stopCamera();
+    };
   }, []);
 
   const stopCamera = () => {
@@ -136,6 +207,7 @@ export default function XRPreview() {
       }
       setCameraOn(true);
       setImageUrl("");
+      runScan();
     } catch {
       setCameraError("カメラは使えませんでした。デモ背景で表示します。");
       setCameraOn(false);
@@ -155,62 +227,108 @@ export default function XRPreview() {
 
   const runScan = () => {
     setScanState("scanning");
+    setStepIndex(0);
     window.setTimeout(() => setScanState("done"), 900);
   };
 
-  const confidenceLabel = active.confidence >= 80 ? "高" : active.confidence >= 60 ? "中" : "要注意";
+  const confidenceLabel = active.confidence >= 80 ? "高" : active.confidence >= 60 ? "中" : "保留";
 
   return (
     <main style={S.page}>
+      <style>{`
+        @keyframes tsSweep { 0% { transform: translateY(-22%); opacity: .25; } 50% { opacity: .95; } 100% { transform: translateY(118%); opacity: .2; } }
+        @keyframes tsPulse { 0%, 100% { transform: scale(1); opacity: .9; } 50% { transform: scale(1.08); opacity: 1; } }
+        @keyframes tsFloat { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-7px); } }
+        @keyframes tsDraw { from { stroke-dashoffset: 240; } to { stroke-dashoffset: 0; } }
+      `}</style>
+
       <section style={S.stage}>
         <div style={{ ...S.cameraLayer, background: active.bg }}>
           {cameraOn && <video ref={videoRef} playsInline muted style={S.video} />}
           {imageUrl && <img src={imageUrl} alt="" style={S.video} />}
           {!cameraOn && !imageUrl && (
             <div style={S.sceneFallback}>
-              <div style={S.storefront}>
+              <div style={{ ...S.storefront, borderColor: active.accent }}>
+                <span style={S.storeTopline}>{active.object.title}</span>
                 <span style={S.storeSign}>{active.target}</span>
                 <span style={S.menuSign}>{active.menu}</span>
+                <div style={S.menuLines}>
+                  {active.object.lines.map((line) => <span key={line}>{line}</span>)}
+                </div>
               </div>
               <div style={S.streetLine} />
             </div>
           )}
-          <div style={S.scanFrame}>
+
+          <div style={S.dim} />
+          <svg viewBox="0 0 100 100" preserveAspectRatio="none" style={S.connectionLayer} aria-hidden="true">
+            <path d="M 50 50 C 36 36, 30 31, 24 28" style={{ ...S.connectionPath, stroke: active.tone }} />
+            <path d="M 50 50 C 56 34, 60 32, 61 31" style={{ ...S.connectionPath, stroke: active.accent }} />
+            <path d="M 50 50 C 44 58, 44 61, 46 64" style={{ ...S.connectionPath, stroke: active.tone }} />
+          </svg>
+
+          <div style={{ ...S.scanFrame, borderColor: active.tone }}>
+            <span style={S.scanBeam} />
+            <span style={S.reticleDot} />
             <span style={S.cornerA} />
             <span style={S.cornerB} />
             <span style={S.cornerC} />
             <span style={S.cornerD} />
           </div>
+
+          {active.anchors.map((anchor) => (
+            <div key={`${active.id}-${anchor.label}`} style={{ ...S.anchor, left: `${anchor.x}%`, top: `${anchor.y}%` }}>
+              <span style={{ ...S.anchorDot, background: anchor.tone }} />
+              <span style={S.anchorText}>
+                <b>{anchor.label}</b>
+                <em>{anchor.value}</em>
+              </span>
+            </div>
+          ))}
+
           <div style={S.topHud}>
-            <span style={S.liveDot} />
-            <span>Web Lens PoC</span>
+            <span style={{ ...S.liveDot, background: active.tone, boxShadow: `0 0 18px ${active.tone}` }} />
+            <span>Taste Spoon Lens</span>
             <span style={S.area}>{active.area}</span>
+          </div>
+
+          <div style={S.pipeline}>
+            {PIPELINE.map((step, index) => (
+              <div
+                key={step.id}
+                style={{
+                  ...S.pipelineStep,
+                  ...(index === stepIndex ? { borderColor: active.tone, color: "#fff", background: "rgba(255,255,255,0.16)" } : null),
+                }}
+              >
+                <b>{step.label}</b>
+                <span>{step.detail}</span>
+              </div>
+            ))}
           </div>
         </div>
 
         <section style={S.overlayCard}>
           <div style={S.cardHead}>
             <div>
-              <p style={S.eyebrow}>Taste Spoon Lens</p>
+              <p style={S.eyebrow}>Web AR Concept</p>
               <h1 style={S.title}>{active.target}</h1>
-              <p style={S.menu}>{active.menu}</p>
+              <p style={S.menu}>{active.recognized.title}</p>
             </div>
             <div style={S.badgeStack}>
-              <span style={S.pocBadge}>Web PoC</span>
+              <span style={S.pocBadge}>PoC</span>
               <div style={{ ...S.verdict, borderColor: active.tone, color: active.tone }}>
-                {active.verdict}
+                <b>{active.verdict}</b>
+                <span>{active.verdictJa}</span>
               </div>
             </div>
           </div>
 
           <div style={S.recognitionBox}>
-            <span style={S.recognitionLabel}>{scanState === "scanning" ? "読み取り中" : "見えた文脈"}</span>
+            <span style={S.recognitionLabel}>{scanState === "scanning" ? "読み取り中" : currentStep.label}</span>
             <b style={S.recognitionTitle}>
-              {scanState === "scanning" ? "カメラ/写真から文脈を抽出中" : active.recognized.title}
+              {scanState === "scanning" ? "カメラ/写真から文脈を抽出中" : active.recognized.detail}
             </b>
-            <p style={S.recognitionDetail}>
-              {scanState === "scanning" ? "店頭・メニューらしさをTaste Spoonの味覚軸に翻訳しています。" : active.recognized.detail}
-            </p>
             <div style={S.recognitionTags}>
               {active.recognized.tags.map((tag) => <span key={tag} style={S.recognitionTag}>{tag}</span>)}
             </div>
@@ -223,8 +341,6 @@ export default function XRPreview() {
             </div>
             <span style={{ ...S.percent, color: active.tone }}>{active.confidence}%</span>
           </div>
-
-          <p style={S.summary}>{scanState === "scanning" ? "視覚文脈を味覚センサーに翻訳中..." : active.summary}</p>
 
           <div style={S.sensorGrid}>
             {active.sensors.map((sensor) => (
@@ -240,19 +356,23 @@ export default function XRPreview() {
             ))}
           </div>
 
-          <div style={S.reasonList}>
-            {active.reasons.map((reason) => <span key={reason} style={S.reason}>{reason}</span>)}
+          <div style={S.insightStack}>
+            {active.insights.map((insight) => (
+              <div key={insight.label} style={S.insight}>
+                <span>{insight.label}</span>
+                <b>{insight.value}</b>
+              </div>
+            ))}
           </div>
 
           <div style={S.altBox}>
-            <span style={S.altLabel}>次の一手</span>
-            <span>{active.alternative}</span>
+            <span style={S.altLabel}>Next action</span>
+            <span>{active.action}</span>
           </div>
         </section>
       </section>
 
       <section style={S.controls}>
-        <p style={S.controlNote}>現在は3つのデモ対象で「見えた文脈から味覚センサー、判定へ」の流れを検証中です。</p>
         <div style={S.targetRow}>
           {SCENE_OPTIONS.map((scene) => (
             <button
@@ -265,7 +385,7 @@ export default function XRPreview() {
               aria-pressed={activeId === scene.id}
               style={{ ...S.targetButton, ...(activeId === scene.id ? S.targetButtonOn : null) }}
             >
-              <span style={S.demoPrefix}>デモ</span>
+              <span style={S.demoPrefix}>Demo</span>
               {scene.target}
             </button>
           ))}
@@ -301,21 +421,23 @@ export default function XRPreview() {
 const S = {
   page: {
     minHeight: "100vh",
-    background: "#0f1310",
+    background: "#0b0f0d",
     color: "#f8f3e9",
     fontFamily: "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
-    padding: "18px 14px 28px",
+    padding: "16px 12px 26px",
   },
   stage: {
     position: "relative",
-    maxWidth: 980,
-    minHeight: "min(760px, calc(100vh - 158px))",
+    maxWidth: 1120,
+    minHeight: 850,
     margin: "0 auto",
     borderRadius: 8,
     overflow: "hidden",
-    border: "1px solid rgba(255,255,255,0.16)",
-    background: "#1b201b",
-    boxShadow: "0 30px 90px rgba(0,0,0,0.42)",
+    borderWidth: 1,
+    borderStyle: "solid",
+    borderColor: "rgba(255,255,255,0.14)",
+    background: "#121815",
+    boxShadow: "0 32px 90px rgba(0,0,0,0.48)",
   },
   cameraLayer: {
     position: "absolute",
@@ -329,6 +451,12 @@ const S = {
     height: "100%",
     objectFit: "cover",
   },
+  dim: {
+    position: "absolute",
+    inset: 0,
+    background: "radial-gradient(circle at 42% 36%, rgba(255,255,255,0.08), transparent 28%), linear-gradient(90deg, rgba(0,0,0,0.12), rgba(0,0,0,0.42))",
+    pointerEvents: "none",
+  },
   sceneFallback: {
     position: "absolute",
     inset: 0,
@@ -336,22 +464,35 @@ const S = {
     placeItems: "center",
   },
   storefront: {
-    width: "min(78%, 620px)",
-    minHeight: 220,
+    width: "min(70%, 620px)",
+    minHeight: 250,
     display: "grid",
     alignContent: "center",
-    gap: 18,
+    gap: 12,
     padding: 28,
     borderRadius: 8,
+    borderWidth: 2,
+    borderStyle: "solid",
+    borderColor: "transparent",
     background: "rgba(255, 244, 219, 0.9)",
-    color: "#2b2118",
-    boxShadow: "0 24px 70px rgba(0,0,0,0.42)",
-    transform: "perspective(700px) rotateX(2deg) rotateY(-4deg)",
+    color: "#241b13",
+    boxShadow: "0 24px 70px rgba(0,0,0,0.44)",
+    transform: "perspective(760px) rotateX(2deg) rotateY(-5deg)",
+  },
+  storeTopline: {
+    width: "fit-content",
+    padding: "5px 8px",
+    borderRadius: 999,
+    background: "rgba(36,27,19,0.09)",
+    color: "#5b4a3c",
+    fontSize: 12,
+    fontWeight: 900,
   },
   storeSign: {
-    fontSize: 44,
+    fontSize: 46,
     fontWeight: 950,
     lineHeight: 1.02,
+    letterSpacing: 0,
   },
   menuSign: {
     width: "fit-content",
@@ -361,27 +502,101 @@ const S = {
     color: "#fff6e5",
     fontWeight: 850,
   },
+  menuLines: {
+    display: "flex",
+    flexWrap: "wrap",
+    gap: 8,
+    marginTop: 4,
+  },
   streetLine: {
     position: "absolute",
     left: "8%",
     right: "8%",
     bottom: "18%",
     height: 3,
-    background: "rgba(255,255,255,0.34)",
+    background: "rgba(255,255,255,0.32)",
+  },
+  connectionLayer: {
+    position: "absolute",
+    inset: 0,
+    width: "100%",
+    height: "100%",
+    pointerEvents: "none",
+  },
+  connectionPath: {
+    fill: "none",
+    strokeWidth: 0.3,
+    strokeDasharray: 240,
+    animation: "tsDraw 1.4s ease both",
+    opacity: 0.75,
   },
   scanFrame: {
     position: "absolute",
-    left: "11%",
-    top: "13%",
-    width: "48%",
-    height: "34%",
+    left: "30%",
+    top: "25%",
+    width: "28%",
+    height: "30%",
     minWidth: 220,
-    minHeight: 160,
+    minHeight: 170,
+    borderWidth: 1,
+    borderStyle: "solid",
+    borderColor: "transparent",
+    borderRadius: 8,
+    boxShadow: "inset 0 0 32px rgba(255,255,255,0.09), 0 0 40px rgba(0,0,0,0.25)",
+  },
+  scanBeam: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    top: 0,
+    height: "28%",
+    background: "linear-gradient(180deg, rgba(255,255,255,0), rgba(255,255,255,0.22), rgba(255,255,255,0))",
+    animation: "tsSweep 2.1s ease-in-out infinite",
+  },
+  reticleDot: {
+    position: "absolute",
+    left: "50%",
+    top: "50%",
+    width: 9,
+    height: 9,
+    marginLeft: -4.5,
+    marginTop: -4.5,
+    borderRadius: 99,
+    background: "#fff",
+    boxShadow: "0 0 24px rgba(255,255,255,0.95)",
   },
   cornerA: corner("left", "top"),
   cornerB: corner("right", "top"),
   cornerC: corner("left", "bottom"),
   cornerD: corner("right", "bottom"),
+  anchor: {
+    position: "absolute",
+    display: "flex",
+    alignItems: "center",
+    gap: 8,
+    color: "#fff",
+    transform: "translate(-50%, -50%)",
+    animation: "tsFloat 3.2s ease-in-out infinite",
+  },
+  anchorDot: {
+    width: 14,
+    height: 14,
+    borderRadius: 99,
+    border: "2px solid rgba(255,255,255,0.78)",
+    boxShadow: "0 0 26px currentColor",
+    animation: "tsPulse 1.8s ease-in-out infinite",
+  },
+  anchorText: {
+    display: "grid",
+    gap: 2,
+    minWidth: 118,
+    padding: "8px 10px",
+    borderRadius: 8,
+    background: "rgba(8,12,10,0.6)",
+    border: "1px solid rgba(255,255,255,0.16)",
+    backdropFilter: "blur(16px)",
+    boxShadow: "0 12px 40px rgba(0,0,0,0.32)",
+  },
   topHud: {
     position: "absolute",
     left: 16,
@@ -392,15 +607,13 @@ const S = {
     gap: 10,
     fontSize: 13,
     fontWeight: 850,
-    color: "rgba(255,255,255,0.86)",
+    color: "rgba(255,255,255,0.88)",
     textShadow: "0 2px 12px rgba(0,0,0,0.45)",
   },
   liveDot: {
     width: 9,
     height: 9,
     borderRadius: 99,
-    background: "#51cf66",
-    boxShadow: "0 0 18px #51cf66",
   },
   area: {
     marginLeft: "auto",
@@ -408,17 +621,37 @@ const S = {
     borderRadius: 999,
     background: "rgba(0,0,0,0.32)",
   },
+  pipeline: {
+    position: "absolute",
+    left: 16,
+    bottom: 18,
+    display: "grid",
+    gap: 8,
+    width: "min(310px, calc(100% - 34px))",
+  },
+  pipelineStep: {
+    display: "grid",
+    gap: 2,
+    padding: "9px 11px",
+    borderRadius: 8,
+    borderWidth: 1,
+    borderStyle: "solid",
+    borderColor: "rgba(255,255,255,0.12)",
+    background: "rgba(0,0,0,0.28)",
+    color: "rgba(255,255,255,0.68)",
+    backdropFilter: "blur(14px)",
+  },
   overlayCard: {
     position: "absolute",
     right: 18,
     bottom: 18,
-    width: "min(430px, calc(100% - 36px))",
+    width: "min(450px, calc(100% - 36px))",
     padding: 18,
     borderRadius: 8,
-    background: "rgba(255, 251, 240, 0.92)",
-    color: "#251c15",
+    background: "rgba(255, 251, 240, 0.93)",
+    color: "#241b13",
     backdropFilter: "blur(18px)",
-    boxShadow: "0 18px 56px rgba(0,0,0,0.36)",
+    boxShadow: "0 18px 56px rgba(0,0,0,0.38)",
   },
   cardHead: {
     display: "flex",
@@ -435,7 +668,7 @@ const S = {
   },
   title: {
     margin: 0,
-    fontSize: 30,
+    fontSize: 29,
     lineHeight: 1.04,
     letterSpacing: 0,
   },
@@ -443,15 +676,6 @@ const S = {
     margin: "7px 0 0",
     color: "#6b5a4a",
     fontWeight: 760,
-  },
-  verdict: {
-    flex: "0 0 auto",
-    border: "2px solid",
-    borderRadius: 8,
-    padding: "8px 10px",
-    fontWeight: 950,
-    fontSize: 17,
-    background: "#fff",
   },
   badgeStack: {
     flex: "0 0 auto",
@@ -468,9 +692,22 @@ const S = {
     fontSize: 11,
     fontWeight: 950,
   },
+  verdict: {
+    display: "grid",
+    gap: 1,
+    borderWidth: 2,
+    borderStyle: "solid",
+    borderColor: "transparent",
+    borderRadius: 8,
+    padding: "8px 10px",
+    fontWeight: 950,
+    fontSize: 16,
+    background: "#fff",
+    textAlign: "right",
+  },
   recognitionBox: {
     display: "grid",
-    gap: 6,
+    gap: 7,
     marginTop: 16,
     padding: 12,
     borderRadius: 8,
@@ -484,14 +721,7 @@ const S = {
   },
   recognitionTitle: {
     fontSize: 15,
-    lineHeight: 1.25,
-  },
-  recognitionDetail: {
-    margin: 0,
-    color: "#514235",
-    fontSize: 13,
-    lineHeight: 1.5,
-    fontWeight: 650,
+    lineHeight: 1.35,
   },
   recognitionTags: {
     display: "flex",
@@ -512,7 +742,7 @@ const S = {
     gridTemplateColumns: "auto 1fr auto",
     alignItems: "center",
     gap: 10,
-    marginTop: 17,
+    marginTop: 16,
   },
   confidenceLabel: {
     fontSize: 12,
@@ -533,13 +763,6 @@ const S = {
   },
   percent: {
     fontWeight: 950,
-  },
-  summary: {
-    margin: "16px 0 0",
-    fontSize: 15,
-    lineHeight: 1.65,
-    color: "#35291f",
-    fontWeight: 680,
   },
   sensorGrid: {
     display: "grid",
@@ -571,17 +794,16 @@ const S = {
     height: "100%",
     borderRadius: 999,
   },
-  reasonList: {
-    display: "flex",
-    flexWrap: "wrap",
-    gap: 7,
+  insightStack: {
+    display: "grid",
+    gap: 8,
     marginTop: 14,
   },
-  reason: {
-    borderRadius: 999,
-    padding: "7px 9px",
-    fontSize: 12,
-    fontWeight: 800,
+  insight: {
+    display: "grid",
+    gap: 3,
+    padding: "9px 10px",
+    borderRadius: 8,
     background: "#fff",
     border: "1px solid rgba(47,36,27,0.1)",
   },
@@ -602,21 +824,14 @@ const S = {
     fontWeight: 950,
   },
   controls: {
-    maxWidth: 980,
+    maxWidth: 1120,
     margin: "14px auto 0",
     display: "grid",
     gap: 12,
   },
-  controlNote: {
-    margin: 0,
-    color: "rgba(255,247,232,0.78)",
-    textAlign: "center",
-    fontSize: 13,
-    fontWeight: 700,
-  },
   targetRow: {
     display: "grid",
-    gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))",
+    gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))",
     gap: 8,
   },
   targetButton: {
@@ -690,7 +905,7 @@ function corner(x, y) {
     position: "absolute",
     width: 34,
     height: 34,
-    borderColor: "rgba(255,255,255,0.78)",
+    borderColor: "rgba(255,255,255,0.8)",
   };
   style[x] = 0;
   style[y] = 0;
