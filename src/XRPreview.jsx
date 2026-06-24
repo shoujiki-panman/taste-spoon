@@ -44,6 +44,14 @@ const SCENES = [
       { label: "Why", value: "旨味と完成度で刺さる可能性が高い" },
       { label: "Log after visit", value: "完成度・食後満足・苦味の有無を記録" },
     ],
+    flight: {
+      from: "現在地のカメラ",
+      to: "品川・北品川エリア",
+      eta: "川崎から約20分圏",
+      distance: "約11km",
+      earthUrl: "https://earth.google.com/web/search/%E4%B8%AD%E8%8F%AF%E3%81%9D%E3%81%B0+%E5%92%8C%E6%B8%A6+TOKYO",
+      waypoints: ["Kawasaki", "Shinagawa", "Kitashinagawa", "Wakaze"],
+    },
     action: "実食前予測として登録。軽めにしたい日は麺量少なめで検証。",
   },
   {
@@ -82,6 +90,14 @@ const SCENES = [
       { label: "Constraint", value: "日常枠ではなく検証日・ご褒美日向き" },
       { label: "Log after visit", value: "重さと満足感の釣り合いを見る" },
     ],
+    flight: {
+      from: "現在地のカメラ",
+      to: "五反田エリア",
+      eta: "川崎から約25分圏",
+      distance: "約13km",
+      earthUrl: "https://earth.google.com/web/search/%E3%81%82%E3%81%92%E7%A6%8F+%E4%BA%94%E5%8F%8D%E7%94%B0",
+      waypoints: ["Kawasaki", "Shinagawa", "Gotanda", "Agefuku"],
+    },
     action: "普段使いより、ご褒美日の候補として保存。",
   },
   {
@@ -120,6 +136,14 @@ const SCENES = [
       { label: "Why", value: "好きな人には刺さるが、自分には危険" },
       { label: "Use", value: "避ける軸の確認に使う" },
     ],
+    flight: {
+      from: "現在地のカメラ",
+      to: "神保町エリア",
+      eta: "川崎から約40分圏",
+      distance: "約21km",
+      earthUrl: "https://earth.google.com/web/search/%E5%85%B1%E6%A0%84%E5%A0%82+%E7%A5%9E%E4%BF%9D%E7%94%BA",
+      waypoints: ["Kawasaki", "Tokyo", "Jimbocho", "Kyoeido"],
+    },
     action: "実食候補ではなく、苦味・焦げNG軸の学習データとして扱う。",
   },
 ];
@@ -160,6 +184,7 @@ const UNKNOWN_SCENE = {
     { label: "Reason", value: "料理名・店名が取れていない" },
     { label: "Next", value: "Vision APIで候補抽出を追加する" },
   ],
+  flight: null,
   action: "店名・料理名の候補を取ってから味覚センサーへ変換する。",
 };
 
@@ -172,6 +197,7 @@ export default function XRPreview() {
   const [cameraError, setCameraError] = useState("");
   const [scanState, setScanState] = useState("ready");
   const [stepIndex, setStepIndex] = useState(0);
+  const [flightMode, setFlightMode] = useState(false);
   const [imageUrl, setImageUrl] = useState("");
   const videoRef = useRef(null);
   const streamRef = useRef(null);
@@ -240,6 +266,8 @@ export default function XRPreview() {
         @keyframes tsPulse { 0%, 100% { transform: scale(1); opacity: .9; } 50% { transform: scale(1.08); opacity: 1; } }
         @keyframes tsFloat { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-7px); } }
         @keyframes tsDraw { from { stroke-dashoffset: 240; } to { stroke-dashoffset: 0; } }
+        @keyframes tsFlight { 0% { transform: scale(1.25) translate3d(-7%, 7%, 0) rotateX(54deg); } 100% { transform: scale(1) translate3d(0, 0, 0) rotateX(48deg); } }
+        @keyframes tsRoute { from { stroke-dashoffset: 420; } to { stroke-dashoffset: 0; } }
       `}</style>
 
       <section style={S.stage}>
@@ -306,6 +334,33 @@ export default function XRPreview() {
               </div>
             ))}
           </div>
+
+          {flightMode && active.flight && (
+            <div style={S.flightOverlay}>
+              <div style={S.flightSky}>
+                <span style={S.flightHorizon} />
+                <span style={S.flightCompass}>Taste Flight / {active.area}</span>
+                <span style={S.flightAltitude}>ALT 1.2km to 60m</span>
+              </div>
+              <div style={S.flightMap}>
+                <svg viewBox="0 0 100 100" preserveAspectRatio="none" style={S.flightRoute} aria-hidden="true">
+                  <path d="M 10 78 C 24 58, 34 55, 45 45 S 66 28, 88 18" style={{ ...S.flightRouteLine, stroke: active.tone }} />
+                  <path d="M 10 78 C 24 58, 34 55, 45 45 S 66 28, 88 18" style={S.flightRouteGlow} />
+                </svg>
+                <span style={{ ...S.flightPin, left: "10%", top: "78%" }}>現在地</span>
+                <span style={{ ...S.flightPin, left: "45%", top: "45%" }}>{active.flight.waypoints[1]}</span>
+                <span style={{ ...S.flightPin, left: "88%", top: "18%", background: active.tone, color: "#08100c" }}>{active.target}</span>
+                <div style={S.flightCard}>
+                  <span style={S.flightLabel}>カメラから店まで飛ぶ</span>
+                  <b>{active.flight.from} から {active.flight.to}</b>
+                  <span>{active.flight.eta} / {active.flight.distance}</span>
+                  <div style={S.flightWaypoints}>
+                    {active.flight.waypoints.map((point) => <em key={point}>{point}</em>)}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
 
         <section style={S.overlayCard}>
@@ -369,6 +424,17 @@ export default function XRPreview() {
             <span style={S.altLabel}>Next action</span>
             <span>{active.action}</span>
           </div>
+
+          {active.flight && (
+            <div style={S.flightActions}>
+              <button type="button" style={S.flightButton} onClick={() => setFlightMode((value) => !value)}>
+                {flightMode ? "カメラに戻る" : "Taste Flight起動"}
+              </button>
+              <a href={active.flight.earthUrl} target="_blank" rel="noreferrer" style={S.earthLink}>
+                Google Earthで開く
+              </a>
+            </div>
+          )}
         </section>
       </section>
 
@@ -395,6 +461,11 @@ export default function XRPreview() {
           <button type="button" style={S.primaryButton} onClick={cameraOn ? runScan : startCamera}>
             {cameraOn ? "再スキャン" : "カメラで見る"}
           </button>
+          {active.flight && (
+            <button type="button" style={S.secondaryButton} onClick={() => setFlightMode((value) => !value)}>
+              {flightMode ? "Lens表示" : "店まで飛ぶ"}
+            </button>
+          )}
           <label style={S.secondaryButton}>
             写真を選ぶ
             <input type="file" accept="image/*" onChange={handleImage} style={S.fileInput} />
@@ -641,6 +712,117 @@ const S = {
     color: "rgba(255,255,255,0.68)",
     backdropFilter: "blur(14px)",
   },
+  flightOverlay: {
+    position: "absolute",
+    inset: 0,
+    overflow: "hidden",
+    background: "linear-gradient(180deg, rgba(87,154,224,0.92) 0%, rgba(142,196,230,0.76) 36%, rgba(12,18,16,0.42) 37%, rgba(9,12,10,0.82) 100%)",
+    backdropFilter: "blur(4px)",
+  },
+  flightSky: {
+    position: "absolute",
+    inset: "0 0 auto",
+    height: "42%",
+    color: "#f8fbff",
+    textShadow: "0 2px 12px rgba(0,0,0,0.34)",
+  },
+  flightHorizon: {
+    position: "absolute",
+    left: "8%",
+    right: "8%",
+    bottom: "10%",
+    height: 2,
+    background: "rgba(255,255,255,0.55)",
+    boxShadow: "0 0 26px rgba(255,255,255,0.5)",
+  },
+  flightCompass: {
+    position: "absolute",
+    left: "50%",
+    top: 24,
+    transform: "translateX(-50%)",
+    padding: "7px 12px",
+    borderRadius: 999,
+    background: "rgba(0,0,0,0.2)",
+    fontWeight: 900,
+  },
+  flightAltitude: {
+    position: "absolute",
+    right: 18,
+    top: 24,
+    padding: "7px 10px",
+    borderRadius: 999,
+    background: "rgba(0,0,0,0.2)",
+    fontWeight: 850,
+  },
+  flightMap: {
+    position: "absolute",
+    left: "8%",
+    right: "8%",
+    bottom: "-10%",
+    height: "68%",
+    borderRadius: 8,
+    background: "linear-gradient(135deg, rgba(42,92,69,0.95), rgba(31,69,91,0.9) 40%, rgba(137,125,75,0.92) 41%, rgba(55,94,68,0.94) 66%, rgba(25,53,70,0.94))",
+    border: "1px solid rgba(255,255,255,0.2)",
+    boxShadow: "0 28px 90px rgba(0,0,0,0.45)",
+    transformOrigin: "50% 100%",
+    animation: "tsFlight 3.4s ease both",
+  },
+  flightRoute: {
+    position: "absolute",
+    inset: 0,
+    width: "100%",
+    height: "100%",
+  },
+  flightRouteLine: {
+    fill: "none",
+    strokeWidth: 1.1,
+    strokeLinecap: "round",
+    strokeDasharray: 420,
+    animation: "tsRoute 2.2s ease both",
+  },
+  flightRouteGlow: {
+    fill: "none",
+    stroke: "rgba(255,255,255,0.38)",
+    strokeWidth: 3.2,
+    strokeLinecap: "round",
+    strokeDasharray: 420,
+    animation: "tsRoute 2.2s ease both",
+  },
+  flightPin: {
+    position: "absolute",
+    transform: "translate(-50%, -50%)",
+    padding: "7px 9px",
+    borderRadius: 999,
+    background: "rgba(8,12,10,0.72)",
+    color: "#fff",
+    border: "1px solid rgba(255,255,255,0.22)",
+    fontSize: 12,
+    fontWeight: 900,
+    boxShadow: "0 12px 30px rgba(0,0,0,0.35)",
+  },
+  flightCard: {
+    position: "absolute",
+    left: 18,
+    bottom: 24,
+    display: "grid",
+    gap: 7,
+    width: "min(360px, calc(100% - 36px))",
+    padding: 14,
+    borderRadius: 8,
+    background: "rgba(255,251,240,0.92)",
+    color: "#241b13",
+    boxShadow: "0 18px 50px rgba(0,0,0,0.36)",
+  },
+  flightLabel: {
+    color: "#7a6755",
+    fontSize: 11,
+    fontWeight: 950,
+  },
+  flightWaypoints: {
+    display: "flex",
+    flexWrap: "wrap",
+    gap: 6,
+  },
   overlayCard: {
     position: "absolute",
     right: 18,
@@ -817,6 +999,32 @@ const S = {
     color: "#fff7e8",
     fontSize: 13,
     lineHeight: 1.45,
+  },
+  flightActions: {
+    display: "grid",
+    gridTemplateColumns: "1fr 1fr",
+    gap: 8,
+    marginTop: 12,
+  },
+  flightButton: {
+    minHeight: 42,
+    border: 0,
+    borderRadius: 8,
+    background: "#38d996",
+    color: "#08100c",
+    fontWeight: 950,
+    cursor: "pointer",
+  },
+  earthLink: {
+    minHeight: 42,
+    display: "grid",
+    placeItems: "center",
+    borderRadius: 8,
+    background: "#fff",
+    color: "#241b13",
+    textDecoration: "none",
+    fontWeight: 900,
+    border: "1px solid rgba(47,36,27,0.1)",
   },
   altLabel: {
     color: "#f0c36b",
