@@ -9,6 +9,11 @@ const SCENES = [
     verdict: "合いそう",
     confidence: 78,
     tone: "#2f9e44",
+    recognized: {
+      title: "店頭/メニュー: 醤油ラーメン系",
+      detail: "写真や店頭情報から、旨味・完成度・初見適性を優先してTaste Spoonの味覚センサーへ変換。",
+      tags: ["ramen", "umami-led", "first visit"],
+    },
     summary: "旨味と完成度で刺さる可能性が高い。苦味・焦げリスクは低め。",
     sensors: [
       { label: "旨味", value: 86, tone: "#2f9e44" },
@@ -28,6 +33,11 @@ const SCENES = [
     verdict: "強く合いそう",
     confidence: 84,
     tone: "#2f9e44",
+    recognized: {
+      title: "店頭/メニュー: とんかつ定食",
+      detail: "写真や店頭情報から、肉・脂・満足感の強さを抽出し、ご褒美枠として照合。",
+      tags: ["tonkatsu", "rich", "reward meal"],
+    },
     summary: "肉・脂・満足感はかなり強い。ご褒美枠として相性が良さそう。",
     sensors: [
       { label: "満足感", value: 94, tone: "#2f9e44" },
@@ -47,6 +57,11 @@ const SCENES = [
     verdict: "注意",
     confidence: 43,
     tone: "#e8590c",
+    recognized: {
+      title: "店頭/メニュー: スマトラカレー",
+      detail: "写真や店頭情報から、苦味・焦げ・強いクセの可能性を検出。負アンカーとして扱う。",
+      tags: ["curry", "bitter risk", "negative anchor"],
+    },
     summary: "苦味・焦げ・通好みリスクが高い。負アンカーとして記録価値は大きい。",
     sensors: [
       { label: "苦味リスク", value: 92, tone: "#e8590c" },
@@ -60,6 +75,34 @@ const SCENES = [
   },
 ];
 
+const UNKNOWN_SCENE = {
+  id: "unknown",
+  target: "未判定の写真",
+  menu: "写真入力",
+  area: "Web PoC",
+  verdict: "判断できない",
+  confidence: 12,
+  tone: "#868e96",
+  recognized: {
+    title: "店名/料理を特定できません",
+    detail: "このPoCでは、デモ対象外の写真に対して味覚判定を出しません。次はVision API等で店名・料理名の候補を取る想定です。",
+    tags: ["unknown input", "no match", "honest fallback"],
+  },
+  summary: "根拠が薄い写真は、合う/合わないを無理に出さずに止めます。",
+  sensors: [
+    { label: "認識根拠", value: 18, tone: "#868e96" },
+    { label: "味覚根拠", value: 12, tone: "#868e96" },
+    { label: "要追加入力", value: 88, tone: "#f08c00" },
+    { label: "判定保留", value: 92, tone: "#e8590c" },
+  ],
+  reasons: ["デモ対象に一致しない", "料理名/店名が取れていない", "根拠なしの判定は出さない"],
+  alternative: "店名・料理名を入力してから、味覚センサーへ変換する",
+  bg: "linear-gradient(135deg, #20252b 0%, #535b63 45%, #adb5bd 46%, #dee2e6 56%, #30363d 57%, #16191d 100%)",
+};
+
+const SCENE_OPTIONS = SCENES;
+const SCENE_LOOKUP = [...SCENES, UNKNOWN_SCENE];
+
 export default function XRPreview() {
   const [activeId, setActiveId] = useState("wakaze");
   const [cameraOn, setCameraOn] = useState(false);
@@ -68,7 +111,7 @@ export default function XRPreview() {
   const [imageUrl, setImageUrl] = useState("");
   const videoRef = useRef(null);
   const streamRef = useRef(null);
-  const active = useMemo(() => SCENES.find((s) => s.id === activeId) ?? SCENES[0], [activeId]);
+  const active = useMemo(() => SCENE_LOOKUP.find((s) => s.id === activeId) ?? SCENES[0], [activeId]);
 
   useEffect(() => {
     return () => stopCamera();
@@ -106,6 +149,7 @@ export default function XRPreview() {
     setCameraOn(false);
     setImageUrl(URL.createObjectURL(file));
     setCameraError("");
+    setActiveId("unknown");
     runScan();
   };
 
@@ -139,7 +183,7 @@ export default function XRPreview() {
           </div>
           <div style={S.topHud}>
             <span style={S.liveDot} />
-            <span>XR Preview</span>
+            <span>Web Lens PoC</span>
             <span style={S.area}>{active.area}</span>
           </div>
         </div>
@@ -151,20 +195,36 @@ export default function XRPreview() {
               <h1 style={S.title}>{active.target}</h1>
               <p style={S.menu}>{active.menu}</p>
             </div>
-            <div style={{ ...S.verdict, borderColor: active.tone, color: active.tone }}>
-              {active.verdict}
+            <div style={S.badgeStack}>
+              <span style={S.pocBadge}>Web PoC</span>
+              <div style={{ ...S.verdict, borderColor: active.tone, color: active.tone }}>
+                {active.verdict}
+              </div>
+            </div>
+          </div>
+
+          <div style={S.recognitionBox}>
+            <span style={S.recognitionLabel}>{scanState === "scanning" ? "読み取り中" : "見えた文脈"}</span>
+            <b style={S.recognitionTitle}>
+              {scanState === "scanning" ? "カメラ/写真から文脈を抽出中" : active.recognized.title}
+            </b>
+            <p style={S.recognitionDetail}>
+              {scanState === "scanning" ? "店頭・メニューらしさをTaste Spoonの味覚軸に翻訳しています。" : active.recognized.detail}
+            </p>
+            <div style={S.recognitionTags}>
+              {active.recognized.tags.map((tag) => <span key={tag} style={S.recognitionTag}>{tag}</span>)}
             </div>
           </div>
 
           <div style={S.confidenceRow}>
-            <span style={S.confidenceLabel}>予測確度 {confidenceLabel}</span>
+            <span style={S.confidenceLabel}>仮説強度 {confidenceLabel}</span>
             <div style={S.meter}>
               <span style={{ ...S.meterFill, width: `${active.confidence}%`, background: active.tone }} />
             </div>
             <span style={{ ...S.percent, color: active.tone }}>{active.confidence}%</span>
           </div>
 
-          <p style={S.summary}>{scanState === "scanning" ? "味覚センサーを照合中..." : active.summary}</p>
+          <p style={S.summary}>{scanState === "scanning" ? "視覚文脈を味覚センサーに翻訳中..." : active.summary}</p>
 
           <div style={S.sensorGrid}>
             {active.sensors.map((sensor) => (
@@ -192,8 +252,9 @@ export default function XRPreview() {
       </section>
 
       <section style={S.controls}>
+        <p style={S.controlNote}>現在は3つのデモ対象で「見えた文脈から味覚センサー、判定へ」の流れを検証中です。</p>
         <div style={S.targetRow}>
-          {SCENES.map((scene) => (
+          {SCENE_OPTIONS.map((scene) => (
             <button
               key={scene.id}
               type="button"
@@ -204,6 +265,7 @@ export default function XRPreview() {
               aria-pressed={activeId === scene.id}
               style={{ ...S.targetButton, ...(activeId === scene.id ? S.targetButtonOn : null) }}
             >
+              <span style={S.demoPrefix}>デモ</span>
               {scene.target}
             </button>
           ))}
@@ -391,6 +453,60 @@ const S = {
     fontSize: 17,
     background: "#fff",
   },
+  badgeStack: {
+    flex: "0 0 auto",
+    display: "grid",
+    justifyItems: "end",
+    gap: 7,
+  },
+  pocBadge: {
+    width: "fit-content",
+    padding: "5px 8px",
+    borderRadius: 999,
+    background: "rgba(47,36,27,0.08)",
+    color: "#6b5a4a",
+    fontSize: 11,
+    fontWeight: 950,
+  },
+  recognitionBox: {
+    display: "grid",
+    gap: 6,
+    marginTop: 16,
+    padding: 12,
+    borderRadius: 8,
+    background: "rgba(47,36,27,0.06)",
+    border: "1px solid rgba(47,36,27,0.08)",
+  },
+  recognitionLabel: {
+    color: "#8c735f",
+    fontSize: 11,
+    fontWeight: 950,
+  },
+  recognitionTitle: {
+    fontSize: 15,
+    lineHeight: 1.25,
+  },
+  recognitionDetail: {
+    margin: 0,
+    color: "#514235",
+    fontSize: 13,
+    lineHeight: 1.5,
+    fontWeight: 650,
+  },
+  recognitionTags: {
+    display: "flex",
+    flexWrap: "wrap",
+    gap: 6,
+  },
+  recognitionTag: {
+    borderRadius: 999,
+    padding: "5px 7px",
+    background: "#fff",
+    border: "1px solid rgba(47,36,27,0.08)",
+    color: "#5b4a3c",
+    fontSize: 11,
+    fontWeight: 850,
+  },
   confidenceRow: {
     display: "grid",
     gridTemplateColumns: "auto 1fr auto",
@@ -491,6 +607,13 @@ const S = {
     display: "grid",
     gap: 12,
   },
+  controlNote: {
+    margin: 0,
+    color: "rgba(255,247,232,0.78)",
+    textAlign: "center",
+    fontSize: 13,
+    fontWeight: 700,
+  },
   targetRow: {
     display: "grid",
     gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))",
@@ -504,6 +627,16 @@ const S = {
     color: "#f8f3e9",
     fontWeight: 850,
     cursor: "pointer",
+  },
+  demoPrefix: {
+    display: "inline-block",
+    marginRight: 7,
+    padding: "2px 6px",
+    borderRadius: 999,
+    background: "rgba(240,195,107,0.2)",
+    color: "inherit",
+    fontSize: 11,
+    fontWeight: 950,
   },
   targetButtonOn: {
     background: "#fff3dc",
